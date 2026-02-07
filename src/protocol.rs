@@ -1,4 +1,6 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use std::str::FromStr;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -88,15 +90,40 @@ pub enum ClientMessageType {
     Maplist,
 }
 
-pub trait MessageContent {}
+mod sealed {
+    pub trait Sealed {}
+    impl Sealed for super::ServerMessageType {}
+    impl Sealed for super::ClientMessageType {}
+}
+
+pub trait MessageContent: sealed::Sealed + Serialize + DeserializeOwned {}
 impl MessageContent for ServerMessageType {}
 impl MessageContent for ClientMessageType {}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(bound(deserialize = "T: DeserializeOwned"))]
 pub struct Message<T: MessageContent> {
     #[serde(flatten)]
     pub content: T,
     pub id: usize,
+}
+
+impl<T: MessageContent> Message<T> {
+    pub fn new(content: T) -> Self {
+        static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
+        Self {
+            id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
+            content,
+        }
+    }
+}
+
+impl<T: MessageContent> FromStr for Message<T> {
+    type Err = serde_json::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        serde_json::from_str(s)
+    }
 }
 
 pub type ServerMessage = Message<ServerMessageType>;
@@ -117,9 +144,9 @@ mod tests {
                 "text": "Hello, world!"
             }
         });
-        let print = serde_json::from_value::<ServerMessage>(json).unwrap();
+        let parsed = serde_json::from_value::<ServerMessage>(json).unwrap();
         assert_eq!(
-            print,
+            parsed,
             ServerMessage {
                 content: ServerMessageType::Print {
                     printlevel: PrintLevel::High,
@@ -137,9 +164,9 @@ mod tests {
             "id": 2,
             "content": 2345234
         });
-        let print = serde_json::from_value::<ServerMessage>(json).unwrap();
+        let parsed = serde_json::from_value::<ServerMessage>(json).unwrap();
         assert_eq!(
-            print,
+            parsed,
             ServerMessage {
                 content: ServerMessageType::LoginResponse(2345234),
                 id: 2,
@@ -154,9 +181,9 @@ mod tests {
             "id": 2,
             "content": null
         });
-        let print = serde_json::from_value::<ServerMessage>(json).unwrap();
+        let parsed = serde_json::from_value::<ServerMessage>(json).unwrap();
         assert_eq!(
-            print,
+            parsed,
             ServerMessage {
                 content: ServerMessageType::LoginSuccess,
                 id: 2,
@@ -171,9 +198,83 @@ mod tests {
             "id": 2,
             "content": "wrong password dude"
         });
-        let print = serde_json::from_value::<ServerMessage>(json).unwrap();
+        let parsed = serde_json::from_value::<ServerMessage>(json).unwrap();
         assert_eq!(
-            print,
+            parsed,
+            ServerMessage {
+                content: ServerMessageType::LoginFailure("wrong password dude".to_string()),
+                id: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn deserialize_print_string() {
+        let json = r#"{
+            "type": "print",
+            "id": 2,
+            "content": {
+                "printlevel": "high",
+                "text": "Hello, world!"
+            }
+        }"#;
+        let parsed = json.parse::<ServerMessage>().unwrap();
+        assert_eq!(
+            parsed,
+            ServerMessage {
+                content: ServerMessageType::Print {
+                    printlevel: PrintLevel::High,
+                    text: "Hello, world!".to_string()
+                },
+                id: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn deserialize_login_response_string() {
+        let json = r#"{
+            "type": "login_response",
+            "id": 2,
+            "content": 2345234
+        }"#;
+        let parsed = json.parse::<ServerMessage>().unwrap();
+        assert_eq!(
+            parsed,
+            ServerMessage {
+                content: ServerMessageType::LoginResponse(2345234),
+                id: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn deserialize_login_success_string() {
+        let json = r#"{
+            "type": "login_success",
+            "id": 2,
+            "content": null
+        }"#;
+        let parsed = json.parse::<ServerMessage>().unwrap();
+        assert_eq!(
+            parsed,
+            ServerMessage {
+                content: ServerMessageType::LoginSuccess,
+                id: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn deserialize_login_failure_string() {
+        let json = r#"{
+            "type": "login_failure",
+            "id": 2,
+            "content": "wrong password dude"
+        }"#;
+        let parsed = json.parse::<ServerMessage>().unwrap();
+        assert_eq!(
+            parsed,
             ServerMessage {
                 content: ServerMessageType::LoginFailure("wrong password dude".to_string()),
                 id: 2,
