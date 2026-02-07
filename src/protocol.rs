@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use std::fmt::Display;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -116,6 +117,10 @@ impl<T: MessageContent> Message<T> {
             content,
         }
     }
+
+    pub fn serialize(&self) -> String {
+        serde_json::to_string(&self).unwrap()
+    }
 }
 
 impl<T: MessageContent> FromStr for Message<T> {
@@ -123,6 +128,12 @@ impl<T: MessageContent> FromStr for Message<T> {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         serde_json::from_str(s)
+    }
+}
+
+impl<T: MessageContent> Display for Message<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", serde_json::to_string_pretty(&self).unwrap())
     }
 }
 
@@ -284,11 +295,11 @@ mod tests {
 
     #[test]
     fn serialize_command() {
-        let command = ClientMessage {
+        let message = ClientMessage {
             content: ClientMessageType::Command("echo hello".to_string()),
             id: 1,
         };
-        let json = serde_json::to_value(&command).unwrap();
+        let json = serde_json::to_value(&message).unwrap();
         assert_eq!(
             json,
             json!({
@@ -301,7 +312,7 @@ mod tests {
 
     #[test]
     fn serialize_login_request() {
-        let command = ClientMessage {
+        let message = ClientMessage {
             content: ClientMessageType::LoginRequest(ProtocolVersion {
                 major: 1,
                 minor: 0,
@@ -309,7 +320,7 @@ mod tests {
             }),
             id: 5,
         };
-        let json = serde_json::to_value(&command).unwrap();
+        let json = serde_json::to_value(&message).unwrap();
         assert_eq!(
             json,
             json!({
@@ -322,11 +333,11 @@ mod tests {
 
     #[test]
     fn serialize_login_password() {
-        let command = ClientMessage {
+        let message = ClientMessage {
             content: ClientMessageType::LoginPassword("password".to_string()),
             id: 20,
         };
-        let json = serde_json::to_value(&command).unwrap();
+        let json = serde_json::to_value(&message).unwrap();
         assert_eq!(
             json,
             json!({

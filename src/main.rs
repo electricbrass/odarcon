@@ -20,6 +20,18 @@ use cursive::view::*;
 use cursive::views::*;
 use cursive::views::{EditView, LinearLayout, TextView};
 use cursive::{Cursive, CursiveExt};
+use futures_util::{SinkExt, StreamExt};
+use serde_json::Value;
+use tokio::runtime::Runtime;
+use tokio_tungstenite::connect_async;
+use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+
+use crate::protocol::{ClientMessage, ClientMessageType};
+mod config;
+mod protocol;
+mod socket;
+// use url::Url;
 
 fn main() {
     let mut siv = Cursive::default();
@@ -44,6 +56,12 @@ fn main() {
             s.call_on_name("input", |v: &mut EditView| {
                 v.set_content("");
             });
+
+            let json_msg =
+                ClientMessage::new(ClientMessageType::Command(text.to_string())).serialize();
+            if let Some(tx) = s.user_data::<tokio::sync::mpsc::UnboundedSender<String>>() {
+                let _ = tx.send(json_msg);
+            }
         })
         .filler(" ")
         .style(Style {
@@ -90,14 +108,66 @@ fn main() {
         }
     });
 
+    #[cfg(debug_assertions)]
+    siv.add_global_callback(Event::CtrlChar('e'), |s| {
+        error_popup("This is a test error popup", s)
+    });
+
     siv.add_global_callback('/', |s| match s.focus_name("input") {
         Ok(cb) => cb.process(s),
-        Err(_e) => error_popup("Console input could not be focused", s),
+        Err(_) => error_popup("Console input could not be focused", s),
     });
 
     siv.add_global_callback(Key::Esc, |s| match s.focus_name("button1") {
         Ok(cb) => cb.process(s),
-        Err(_e) => error_popup("Button 1 could not be focused", s),
+        Err(_) => error_popup("Button 1 could not be focused", s),
+    });
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    siv.set_user_data(tx);
+
+    let rt = Runtime::new().unwrap();
+
+    let cb_sink = siv.cb_sink().clone();
+    let print_to_console = move |text: String| {
+        cb_sink
+            .send(Box::new(move |s: &mut Cursive| {
+                s.call_on_name("output", |v: &mut TextView| {
+                    v.append(format!("> {}\n", text));
+                });
+            }))
+            .unwrap();
+    };
+
+    rt.spawn(async move {
+        print_to_console("Starting connection...".to_string());
+        // let url = Url::parse("ws://127.0.0.1:11666").unwrap();
+        let mut req = "ws://127.0.0.1:11666".into_client_request().unwrap();
+        req.headers_mut()
+            .append("Sec-WebSocket-Protocol", "odamex-rcon".parse().unwrap()); // unwrap is safe with only ascii
+        let (ws_stream, _) = connect_async(req).await.expect("Failed to connect");
+        print_to_console("Connected to websocket server!".to_string());
+
+        let (mut write, mut read) = ws_stream.split();
+
+        tokio::spawn(async move {
+            while let Some(msg) = rx.recv().await {
+                let _ = write.send(Message::Text(msg.into())).await;
+            }
+        });
+
+        // read messages from websocket
+        while let Some(msg) = read.next().await {
+            match msg {
+                Ok(Message::Text(txt)) => match serde_json::from_str::<Value>(&txt) {
+                    Ok(json) => print_to_console(format!("Received: {:?}", json)),
+                    Err(_) => print_to_console(format!("Received text: {}", txt)),
+                },
+                Ok(Message::Binary(_)) => {}
+                Ok(Message::Close(_)) => break,
+                _ => {}
+            }
+        }
     });
 
     siv.run();
@@ -115,5 +185,6 @@ fn error_popup(message: &str, s: &mut Cursive) {
         },
     );
     text.append(StyledString::plain(message));
-    s.add_layer(Dialog::info(format!("Error:     \n\n{}", message)));
+    s.add_layer(Dialog::info(text).padding_left(3).padding_right(3)); // TODO: make this a little nicer
+    // only want padding applied to the message but not button or Error:
 }
