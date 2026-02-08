@@ -33,13 +33,10 @@ mod protocol;
 mod socket;
 // use url::Url;
 
+// TODO: use directories to get XDG_STATE_HOME location and write stderr logs there
+
 fn main() {
     let mut siv = Cursive::default();
-    siv.add_layer(
-        Dialog::around(TextView::new("Hello Dialog!"))
-            .title("Cursive")
-            .button("Quit", |s| s.quit()),
-    );
 
     let output = TextView::new("")
         .with_name("output")
@@ -81,20 +78,56 @@ fn main() {
 
     let left_pane = LinearLayout::vertical()
         .child(output_panel.full_height())
-        .child(input_panel);
+        .child(input_panel)
+        .with_name("left");
 
     let right_pane = LinearLayout::vertical()
-        .child(Button::new("Button 1", |_| {}).with_name("button1"))
+        .child(Button::new("Maplist", |_| {}).with_name("button1"))
         .child(Button::new("Button 2", |_| {}))
         .child(Button::new("Button 3", |_| {}))
         .child(DummyView.fixed_height(1))
+        .child(Button::new("Disconnect", |_| {}))
         .child(Button::new("Quit", |s| s.quit()));
 
     let right_panel = Panel::new(right_pane).title("Actions").fixed_width(18);
 
     let main_layout = LinearLayout::horizontal()
-        .child(left_pane.full_width())
+        .child(left_pane)
         .child(right_panel);
+
+    fn update_left_max_width(s: &mut Cursive) {
+        let term_width = s.screen_size().x;
+        let right_width = 18;
+        if term_width > right_width {
+            let max_left = term_width - right_width;
+            s.call_on_name("left", |v: &mut ResizedView<LinearLayout>| {
+                v.set_width(SizeConstraint::AtMost(max_left));
+            });
+            s.call_on_name("output", |v: &mut TextView| {
+                v.append(format!("> new width: {}\n", max_left));
+            });
+        }
+    }
+
+    siv.add_global_callback(cursive::event::Event::WindowResize, |s| {
+        update_left_max_width(s);
+    });
+
+    siv.add_global_callback(cursive::event::Event::Refresh, |s| {
+        // This runs after the first frame
+        let term_width = s.screen_size().x;
+        let right_width = 18;
+        let max_left = term_width.saturating_sub(right_width);
+        s.call_on_name("left", |v: &mut ResizedView<LinearLayout>| {
+            v.set_width(SizeConstraint::AtMost(max_left));
+        });
+        s.call_on_name("output", |v: &mut TextView| {
+            v.append(format!("> new width: {}\n", max_left));
+        });
+
+        // remove this callback after first run
+        s.clear_global_callbacks(cursive::event::Event::Refresh);
+    });
 
     siv.add_fullscreen_layer(main_layout);
 
@@ -111,6 +144,11 @@ fn main() {
     #[cfg(debug_assertions)]
     siv.add_global_callback(Event::CtrlChar('e'), |s| {
         error_popup("This is a test error popup", s)
+    });
+
+    #[cfg(debug_assertions)]
+    siv.add_global_callback(Event::CtrlChar('d'), |s| {
+        s.toggle_debug_console();
     });
 
     siv.add_global_callback('/', |s| match s.focus_name("input") {

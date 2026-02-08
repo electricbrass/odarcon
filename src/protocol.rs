@@ -106,7 +106,7 @@ impl MessageContent for ClientMessageType {}
 pub struct Message<T: MessageContent> {
     #[serde(flatten)]
     pub content: T,
-    pub id: usize,
+    id: usize,
 }
 
 impl<T: MessageContent> Message<T> {

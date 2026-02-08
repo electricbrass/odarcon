@@ -10,6 +10,7 @@ pub enum ProtocolVersion {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ServerConfig {
+    pub name: String,
     pub host: String,
     pub port: u16,
     pub password: String,
@@ -19,6 +20,7 @@ pub struct ServerConfig {
 impl Default for ServerConfig {
     fn default() -> Self {
         Self {
+            name: "".to_string(),
             host: "".to_string(),
             port: 10666,
             password: "".to_string(),
