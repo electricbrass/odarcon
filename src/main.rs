@@ -21,13 +21,12 @@ use cursive::views::*;
 use cursive::views::{EditView, LinearLayout, TextView};
 use cursive::{Cursive, CursiveExt};
 use futures_util::{SinkExt, StreamExt};
-use serde_json::Value;
 use tokio::runtime::Runtime;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
-use crate::protocol::{ClientMessage, ClientMessageType};
+use crate::protocol::{ClientMessage, ClientMessageType, ServerMessage};
 mod config;
 mod protocol;
 mod socket;
@@ -180,7 +179,7 @@ fn main() {
     rt.spawn(async move {
         print_to_console("Starting connection...".to_string());
         // let url = Url::parse("ws://127.0.0.1:11666").unwrap();
-        let mut req = "ws://127.0.0.1:11666".into_client_request().unwrap();
+        let mut req = "ws://127.0.0.1:10666".into_client_request().unwrap();
         req.headers_mut()
             .append("Sec-WebSocket-Protocol", "odamex-rcon".parse().unwrap()); // unwrap is safe with only ascii
         let (ws_stream, _) = connect_async(req).await.expect("Failed to connect");
@@ -197,9 +196,9 @@ fn main() {
         // read messages from websocket
         while let Some(msg) = read.next().await {
             match msg {
-                Ok(Message::Text(txt)) => match serde_json::from_str::<Value>(&txt) {
-                    Ok(json) => print_to_console(format!("Received: {:?}", json)),
-                    Err(_) => print_to_console(format!("Received text: {}", txt)),
+                Ok(Message::Text(txt)) => match txt.parse::<ServerMessage>() {
+                    Ok(message) => print_to_console(format!("Received: {}", message)),
+                    Err(e) => print_to_console(format!("Received invalid message: {}\n{}", txt, e)),
                 },
                 Ok(Message::Binary(_)) => {}
                 Ok(Message::Close(_)) => break,

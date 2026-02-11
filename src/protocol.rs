@@ -36,11 +36,16 @@ pub enum PrintLevel {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(tag = "type", content = "content", rename_all = "snake_case")]
+#[serde(
+    tag = "type",
+    content = "content",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum ServerMessageType {
     LoginResponse(u64),
     LoginFailure(String),
-    LoginSuccess,
+    LoginSuccess, // TODO: should this include something like sv_hostname? for printing "Successfully connect to <hostname>"
     Print {
         printlevel: PrintLevel,
         text: String,
@@ -97,7 +102,12 @@ impl<'a> Deserialize<'a> for ProtocolVersion {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(tag = "type", content = "content", rename_all = "snake_case")]
+#[serde(
+    tag = "type",
+    content = "content",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum ClientMessageType {
     LoginRequest(ProtocolVersion),
     LoginPassword(String),
@@ -116,7 +126,7 @@ impl MessageContent for ServerMessageType {}
 impl MessageContent for ClientMessageType {}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(bound(deserialize = "T: DeserializeOwned"))]
+#[serde(bound(deserialize = "T: DeserializeOwned"), deny_unknown_fields)]
 pub struct Message<T: MessageContent> {
     #[serde(flatten)]
     pub content: T,
