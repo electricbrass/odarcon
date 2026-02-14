@@ -133,7 +133,7 @@ fn main_menu(siv: &mut Cursive) {
     quick_connect.add_child(
         "Port (optional):",
         EditView::new()
-            .on_edit_mut(|s, content, _| filter_port("port", s, content))
+            .on_edit(|s, content, _| filter_port("port", s, content))
             .with_name("port"),
     );
     quick_connect.add_child("Password:", EditView::new().secret().with_name("password"));
