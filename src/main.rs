@@ -110,10 +110,32 @@ fn error_popup(message: &str, s: &mut Cursive) {
     );
 }
 
+fn filter_port(name: &str, siv: &mut Cursive, content: &str) {
+    let filtered: String = content.chars().filter(|c| c.is_ascii_digit()).collect();
+
+    let filtered = if filtered.len() > 5 {
+        &filtered[..5]
+    } else {
+        &filtered
+    };
+
+    if filtered != content {
+        siv.call_on_name(name, |v: &mut EditView| {
+            v.set_content(filtered);
+        });
+    }
+}
+
 fn main_menu(siv: &mut Cursive) {
     let mut quick_connect = ListView::new();
     quick_connect.add_child("Hostname:", EditView::new().with_name("hostname"));
-    quick_connect.add_child("Port (optional):", EditView::new().with_name("port"));
+    // TODO: make it so that port is limited to 0-65535 range
+    quick_connect.add_child(
+        "Port (optional):",
+        EditView::new()
+            .on_edit_mut(|s, content, _| filter_port("port", s, content))
+            .with_name("port"),
+    );
     quick_connect.add_child("Password:", EditView::new().secret().with_name("password"));
 
     let quick_connect = Panel::new(PaddedView::new(
@@ -134,7 +156,7 @@ fn main_menu(siv: &mut Cursive) {
                 rcon_layer(
                     s,
                     hostname.unwrap().as_str(),
-                    port.unwrap().as_str().parse().unwrap(),
+                    port.unwrap().as_str().parse().unwrap_or(10666),
                     password.unwrap().as_str(),
                 );
             })),
