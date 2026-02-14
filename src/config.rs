@@ -29,11 +29,14 @@ pub enum ConfigError {
     SerializeError(#[from] toml::ser::Error),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ProtocolVersion {
     Latest,
     Custom { major: u8, minor: u8, revision: u8 },
 }
+
+// TODO: implement into for config::protocolversion to protocol::protocolversion
+// custom is easy, latest needs a constant to represent the latest
 
 impl Serialize for ProtocolVersion {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -86,7 +89,7 @@ impl<'a> Deserialize<'a> for ProtocolVersion {
     }
 }
 
-#[derive(Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ServerConfig {
     pub name: String,

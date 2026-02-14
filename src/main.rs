@@ -37,6 +37,10 @@ use crate::protocol::{ClientMessage, ClientMessageType, ServerMessage, ServerMes
 
 // TODO: use directories to get XDG_STATE_HOME location and write stderr logs there
 // TODO: add mode for client commands, like alt c to switch modes or prefixing with ! or : or something
+// TODO: leave main menu layer at the bottom instead of popping it
+// just make sure that the quick connect input fields get cleared
+// this will make it so that the other layers dont need to worry
+// about passing arguments to main_menu
 
 struct AppState {
     config: Config,
@@ -130,7 +134,7 @@ fn main_menu(siv: &mut Cursive) {
                 rcon_layer(
                     s,
                     hostname.unwrap().as_str(),
-                    port.unwrap().as_str(),
+                    port.unwrap().as_str().parse().unwrap(),
                     password.unwrap().as_str(),
                 );
             })),
@@ -153,12 +157,63 @@ fn main_menu(siv: &mut Cursive) {
     welcome.append_plain("!");
 
     let welcome = Panel::new(
-        TextView::new(welcome)
-            .h_align(HAlign::Center)
-            .v_align(VAlign::Center),
+        LinearLayout::vertical()
+            .child(DummyView.fixed_height(1))
+            .child(TextView::new(welcome).h_align(HAlign::Center))
+            .child(DummyView.fixed_height(1))
+            .child(Button::new("Settings", |_| {}))
+            .child(Button::new("About", |s| {
+                s.add_layer(
+                    Dialog::info(format!(
+                        "\nOdaRCON {}\nCopyright © 2026 smth idk\nLicensed under the GPLv2+",
+                        env!("CARGO_PKG_VERSION")
+                    ))
+                    .title("About")
+                    .h_align(HAlign::Center),
+                )
+            })),
     );
 
-    let servers = Panel::new(ListView::new()).title("Servers");
+    // TODO: REMOVE THIS AND REPLACE WITH REAL CONFIG
+    let ugh = |x: &str| crate::config::ServerConfig {
+        name: x.to_string(),
+        host: "127.0.0.1".to_string(),
+        port: 10666,
+        password: "12345".to_string(),
+        protoversion: crate::config::ProtocolVersion::Latest,
+    };
+    let fakeconfig = Config {
+        colorize_logs: false,
+        servers: vec![
+            ugh("Example Server 1"),
+            ugh("Example Server 2"),
+            ugh("Example Server 3"),
+            ugh("Example Server 4"),
+            ugh("Example Server 5"),
+            ugh("Example Server 6"),
+            ugh("Example Server 7"),
+            ugh("Example Server 8"),
+            ugh("Example Server 9"),
+            ugh("Example Server 10"),
+        ],
+    };
+    let mut servers = SelectView::new();
+    // TODO: need to add delete, edit, and reorder buttons somehow
+    // TODO: need to make it not clone so that buttons work right
+    for server in &fakeconfig.servers {
+        servers.add_item(&server.name, server.clone());
+    }
+    servers.set_on_submit(|s, server| {
+        s.pop_layer();
+        rcon_layer(s, &server.host, server.port, &server.password)
+    });
+    let servers = Panel::new(servers.scrollable());
+    let servers = Panel::new(
+        LinearLayout::vertical()
+            .child(LinearLayout::horizontal().child(Button::new("New", |_| {})))
+            .child(servers),
+    )
+    .title("Servers");
 
     siv.add_fullscreen_layer(
         LinearLayout::vertical()
@@ -175,7 +230,7 @@ fn main_menu(siv: &mut Cursive) {
     );
 }
 
-fn rcon_layer(siv: &mut Cursive, hostname: &str, port: &str, password: &str) {
+fn rcon_layer(siv: &mut Cursive, hostname: &str, port: u16, password: &str) {
     let output = TextView::new("")
         .with_name("output")
         .scrollable()
@@ -225,23 +280,23 @@ fn rcon_layer(siv: &mut Cursive, hostname: &str, port: &str, password: &str) {
 
     let right_panel = Panel::new(right_pane).title("Actions").fixed_width(18);
 
-    let main_layout = LinearLayout::horizontal()
+    let console_view = LinearLayout::horizontal()
         .child(left_pane)
         .child(right_panel);
 
-    fn update_left_max_width(s: &mut Cursive) {
-        let term_width = s.screen_size().x;
-        let right_width = 18;
-        if term_width > right_width {
-            let max_left = term_width - right_width;
-            s.call_on_name("left", |v: &mut ResizedView<LinearLayout>| {
-                v.set_width(SizeConstraint::AtMost(max_left));
-            });
-            s.call_on_name("output", |v: &mut TextView| {
-                v.append(format!("> new width: {}\n", max_left));
-            });
-        }
-    }
+    // fn update_left_max_width(s: &mut Cursive) {
+    //     let term_width = s.screen_size().x;
+    //     let right_width = 18;
+    //     if term_width > right_width {
+    //         let max_left = term_width - right_width;
+    //         s.call_on_name("left", |v: &mut ResizedView<LinearLayout>| {
+    //             v.set_width(SizeConstraint::AtMost(max_left));
+    //         });
+    //         s.call_on_name("output", |v: &mut TextView| {
+    //             v.append(format!("> new width: {}\n", max_left));
+    //         });
+    //     }
+    // }
 
     // siv.add_global_callback(cursive::event::Event::WindowResize, |s| {
     //     update_left_max_width(s);
@@ -262,20 +317,18 @@ fn rcon_layer(siv: &mut Cursive, hostname: &str, port: &str, password: &str) {
     //     // remove this callback after first run
     //     s.clear_global_callbacks(cursive::event::Event::Refresh);
     // });
+    //
+    let layer = OnEventView::new(console_view)
+        .on_event('/', |s| match s.focus_name("input") {
+            Ok(cb) => cb.process(s),
+            Err(_) => error_popup("Console input could not be focused", s),
+        })
+        .on_event(Key::Esc, |s| match s.focus_name("button1") {
+            Ok(cb) => cb.process(s),
+            Err(_) => error_popup("Button 1 could not be focused", s),
+        });
 
-    siv.add_fullscreen_layer(main_layout);
-
-    // TODO: todo, make callbacks layer specific
-    siv.add_global_callback('/', |s| match s.focus_name("input") {
-        Ok(cb) => cb.process(s),
-        Err(_) => error_popup("Console input could not be focused", s),
-    });
-
-    // TODO: todo, make callbacks layer specific
-    siv.add_global_callback(Key::Esc, |s| match s.focus_name("button1") {
-        Ok(cb) => cb.process(s),
-        Err(_) => error_popup("Button 1 could not be focused", s),
-    });
+    siv.add_fullscreen_layer(layer);
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
     siv.set_user_data(tx);
