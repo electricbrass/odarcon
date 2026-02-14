@@ -15,7 +15,7 @@
 use cursive;
 use cursive::align::{HAlign, VAlign};
 use cursive::event::{Event, Key};
-use cursive::theme::{ColorStyle, ColorType, PaletteColor, PaletteStyle, Style};
+use cursive::theme::{ColorStyle, ColorType, Effect, Effects, PaletteColor, PaletteStyle, Style};
 use cursive::utils::markup::StyledString;
 use cursive::view::*;
 use cursive::views::*;
@@ -36,7 +36,8 @@ use crate::protocol::{ClientMessage, ClientMessageType, ServerMessage, ServerMes
 // TODO: use directories to get XDG_STATE_HOME location and write stderr logs there
 // TODO: add mode for client commands, like alt c to switch modes or prefixing with ! or : or something
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let mut siv = Cursive::default();
 
     siv.load_toml(include_str!("../res/theme.toml")).unwrap();
@@ -120,17 +121,20 @@ fn main_menu(siv: &mut Cursive) {
     welcome.append_plain("Oda");
     welcome.append_styled(
         "RCON",
-        Style::from(ColorStyle {
-            front: ColorType::Palette(PaletteColor::TitlePrimary),
-            back: ColorType::InheritParent,
-        }),
+        Style {
+            color: ColorStyle {
+                front: ColorType::Palette(PaletteColor::TitlePrimary),
+                back: ColorType::InheritParent,
+            },
+            effects: Effects::only(Effect::Bold),
+        },
     );
     welcome.append_plain("!");
 
     let welcome = Panel::new(
         TextView::new(welcome)
             .h_align(HAlign::Center)
-            .v_align(cursive::align::VAlign::Center),
+            .v_align(VAlign::Center),
     );
 
     let servers = Panel::new(ListView::new()).title("Servers");
@@ -146,7 +150,7 @@ fn main_menu(siv: &mut Cursive) {
                     // just makes this always use it's min width
                     .child(welcome.min_width(32).max_width(32)),
             )
-            .child(servers),
+            .child(servers.full_height()),
     );
 }
 
@@ -253,8 +257,6 @@ fn rcon_layer(siv: &mut Cursive, hostname: &str, port: &str, password: &str) {
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
     siv.set_user_data(tx);
 
-    let rt = Runtime::new().unwrap();
-
     let cb_sink = siv.cb_sink().clone();
     // TODO: make a visual distinction between prints from the client and from the server
     // probably keep the > for the printing of commands, and for server logs nothing and for client logs some other character
@@ -270,7 +272,7 @@ fn rcon_layer(siv: &mut Cursive, hostname: &str, port: &str, password: &str) {
 
     // print_to_console("this is something really really long wow look how long this is its so long wahoo wow woahhhhhhhhhhhhhhhh what is this why is this so long".to_string());
 
-    rt.spawn(async move {
+    tokio::spawn(async move {
         print_to_console("Starting connection...\n".to_string());
         // let url = Url::parse("ws://127.0.0.1:11666").unwrap();
         let mut req = "ws://127.0.0.1:10666".into_client_request().unwrap();
