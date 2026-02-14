@@ -1,4 +1,4 @@
-shadow = false  # Don't draw shadows around stacked views
+shadow = true  # Don't draw shadows around stacked views
 borders = "simple"  # Alternatives are "none" and "outset"
 
 [colors]
@@ -14,7 +14,7 @@ borders = "simple"  # Alternatives are "none" and "outset"
     title_secondary = "#ffff55"
 
     highlight          = "#900"
-    highlight_inactive = "#5555FF"
+    highlight_inactive = "#555555"
 
 [styles]
     editable_text = { effects = [], front = "primary", back = "secondary" }
