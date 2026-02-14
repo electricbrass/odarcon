@@ -23,6 +23,7 @@ use cursive::views::{EditView, LinearLayout, TextView};
 use cursive::{Cursive, CursiveExt};
 use futures_util::{SinkExt, StreamExt};
 use tokio::runtime::Runtime;
+use tokio::time::error;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
@@ -31,13 +32,21 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 mod config;
 mod protocol;
 mod socket;
+use crate::config::Config;
 use crate::protocol::{ClientMessage, ClientMessageType, ServerMessage, ServerMessageType};
 
 // TODO: use directories to get XDG_STATE_HOME location and write stderr logs there
 // TODO: add mode for client commands, like alt c to switch modes or prefixing with ! or : or something
 
+struct AppState {
+    config: Config,
+}
+
 #[tokio::main]
 async fn main() {
+    cursive::logger::init();
+    cursive::logger::set_internal_filter_level(log::LevelFilter::Off);
+
     let mut siv = Cursive::default();
 
     siv.load_toml(include_str!("../res/theme.toml")).unwrap();
@@ -62,33 +71,45 @@ async fn main() {
 
     main_menu(&mut siv);
 
+    let config = Config::load().unwrap_or_else(|e| {
+        error_popup("Config file could not be loaded", &mut siv);
+        log::error!("Config file could not be loaded: {e}");
+        Config::new()
+    });
+
     siv.run();
 }
 
 fn error_popup(message: &str, s: &mut Cursive) {
-    let mut text = StyledString::styled(
-        "Error:\n\n",
-        Style {
-            color: ColorStyle {
-                back: ColorType::InheritParent,
-                front: ColorType::Palette(PaletteColor::TitlePrimary),
-            },
-            ..Style::default()
-        },
+    s.add_layer(
+        Dialog::around(
+            LinearLayout::vertical()
+                .child(TextView::new(StyledString::styled(
+                    "Error:",
+                    Style {
+                        color: ColorStyle::front(ColorType::Palette(PaletteColor::TitlePrimary)),
+                        effects: Effects::only(Effect::Bold),
+                    },
+                )))
+                .child(DummyView.fixed_height(1))
+                .child(PaddedView::new(
+                    Margins {
+                        left: 2,
+                        right: 2,
+                        top: 0,
+                        bottom: 0,
+                    },
+                    TextView::new(message).h_align(HAlign::Center),
+                )),
+        )
+        .dismiss_button("Ok"),
     );
-    text.append(StyledString::plain(message));
-    s.add_layer(Dialog::info(text).padding_left(3).padding_right(3)); // TODO: make this a little nicer
-    // only want padding applied to the message but not button or Error:
 }
 
 fn main_menu(siv: &mut Cursive) {
-    // rcon_layer(siv);
     let mut quick_connect = ListView::new();
-
     quick_connect.add_child("Hostname:", EditView::new().with_name("hostname"));
-
     quick_connect.add_child("Port (optional):", EditView::new().with_name("port"));
-
     quick_connect.add_child("Password:", EditView::new().secret().with_name("password"));
 
     let quick_connect = Panel::new(PaddedView::new(
@@ -222,33 +243,35 @@ fn rcon_layer(siv: &mut Cursive, hostname: &str, port: &str, password: &str) {
         }
     }
 
-    siv.add_global_callback(cursive::event::Event::WindowResize, |s| {
-        update_left_max_width(s);
-    });
+    // siv.add_global_callback(cursive::event::Event::WindowResize, |s| {
+    //     update_left_max_width(s);
+    // });
 
-    siv.add_global_callback(cursive::event::Event::Refresh, |s| {
-        // This runs after the first frame
-        let term_width = s.screen_size().x;
-        let right_width = 18;
-        let max_left = term_width.saturating_sub(right_width);
-        s.call_on_name("left", |v: &mut ResizedView<LinearLayout>| {
-            v.set_width(SizeConstraint::AtMost(max_left));
-        });
-        s.call_on_name("output", |v: &mut TextView| {
-            v.append(format!("> new width: {}\n", max_left));
-        });
+    // siv.add_global_callback(cursive::event::Event::Refresh, |s| {
+    //     // This runs after the first frame
+    //     let term_width = s.screen_size().x;
+    //     let right_width = 18;
+    //     let max_left = term_width.saturating_sub(right_width);
+    //     s.call_on_name("left", |v: &mut ResizedView<LinearLayout>| {
+    //         v.set_width(SizeConstraint::AtMost(max_left));
+    //     });
+    //     s.call_on_name("output", |v: &mut TextView| {
+    //         v.append(format!("> new width: {}\n", max_left));
+    //     });
 
-        // remove this callback after first run
-        s.clear_global_callbacks(cursive::event::Event::Refresh);
-    });
+    //     // remove this callback after first run
+    //     s.clear_global_callbacks(cursive::event::Event::Refresh);
+    // });
 
     siv.add_fullscreen_layer(main_layout);
 
+    // TODO: todo, make callbacks layer specific
     siv.add_global_callback('/', |s| match s.focus_name("input") {
         Ok(cb) => cb.process(s),
         Err(_) => error_popup("Console input could not be focused", s),
     });
 
+    // TODO: todo, make callbacks layer specific
     siv.add_global_callback(Key::Esc, |s| match s.focus_name("button1") {
         Ok(cb) => cb.process(s),
         Err(_) => error_popup("Button 1 could not be focused", s),

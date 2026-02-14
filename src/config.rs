@@ -14,15 +14,80 @@
 
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use toml;
 
-#[derive(Debug, Deserialize, Serialize)]
-pub enum ProtocolVersion {
-    Latest,
-    Custom(u8),
+#[derive(Debug, Error)]
+pub enum ConfigError {
+    #[error("No config directory found")]
+    NoConfigDir,
+    #[error("Config file io error: {0}")]
+    FileError(#[from] std::io::Error),
+    #[error("Failed to parse config file: {0}")]
+    ParseError(#[from] toml::de::Error),
+    #[error("Failed to serialize config file: {0}")]
+    SerializeError(#[from] toml::ser::Error),
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, PartialEq)]
+pub enum ProtocolVersion {
+    Latest,
+    Custom { major: u8, minor: u8, revision: u8 },
+}
+
+impl Serialize for ProtocolVersion {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            ProtocolVersion::Latest => serializer.serialize_str("latest"),
+            ProtocolVersion::Custom {
+                major,
+                minor,
+                revision,
+            } => serializer.serialize_str(&format!("{}.{}.{}", major, minor, revision)),
+        }
+    }
+}
+
+impl<'a> Deserialize<'a> for ProtocolVersion {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'a>,
+    {
+        let s = String::deserialize(deserializer)?;
+        if s == "latest" {
+            Ok(ProtocolVersion::Latest)
+        } else {
+            let parts: Vec<&str> = s.split('.').collect();
+            if parts.len() != 3 {
+                return Err(serde::de::Error::custom(
+                    "Expected format 'major.minor.revision'",
+                ));
+            }
+
+            let major = parts[0]
+                .parse::<u8>()
+                .map_err(|_| serde::de::Error::custom("Invalid major version"))?;
+            let minor = parts[1]
+                .parse::<u8>()
+                .map_err(|_| serde::de::Error::custom("Invalid minor version"))?;
+            let revision = parts[2]
+                .parse::<u8>()
+                .map_err(|_| serde::de::Error::custom("Invalid revision version"))?;
+
+            Ok(ProtocolVersion::Custom {
+                major,
+                minor,
+                revision,
+            })
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ServerConfig {
     pub name: String,
     pub host: String,
@@ -43,8 +108,10 @@ impl Default for ServerConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Config {
+    pub colorize_logs: bool,
     pub servers: Vec<ServerConfig>,
 }
 
@@ -53,26 +120,28 @@ impl Config {
         ProjectDirs::from("net", "odamex", "odarcon").map(|dirs| dirs.config_dir().to_path_buf())
     }
 
-    pub fn load() -> Result<Self, ()> {
-        let config_dir = Self::config_dir().unwrap(); // need to actually return error here
+    pub fn load() -> Result<Self, ConfigError> {
+        let config_dir = Self::config_dir().ok_or(ConfigError::NoConfigDir)?;
         let config_path = config_dir.join("config.toml");
 
         if !config_path.exists() {
             return Ok(Self::new());
         }
 
-        let config_str = std::fs::read_to_string(config_path).expect("sdfsdf"); // need to actually return error here
-        let config: Self = toml::from_str::<Self>(&config_str).expect("sdfds"); // need to actually return error here
+        let config_str = std::fs::read_to_string(config_path)?;
+        let config: Self = toml::from_str::<Self>(&config_str)?;
 
         Ok(config)
     }
 
-    pub fn save(&self) -> Result<(), ()> {
-        let config_dir = Self::config_dir().unwrap(); // need to actually return error here
+    pub fn save(&self) -> Result<(), ConfigError> {
+        let config_dir = Self::config_dir().ok_or(ConfigError::NoConfigDir)?;
         let config_path = config_dir.join("config.toml");
 
-        let config_str = toml::to_string_pretty(self).expect("sdfds"); // need to actually return error here
-        std::fs::write(config_path, config_str).expect("sdfds"); // need to actually return error here
+        std::fs::create_dir_all(&config_dir)?;
+
+        let config_str = toml::to_string_pretty(self)?; // need to actually return error here
+        std::fs::write(config_path, config_str)?;
 
         Ok(())
     }
@@ -80,10 +149,74 @@ impl Config {
     pub fn new() -> Self {
         Self {
             servers: Vec::new(),
+            colorize_logs: false,
         }
     }
 
     pub fn add_server(&mut self, server: ServerConfig) {
         self.servers.push(server);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_empty_config() {
+        let toml_config = toml::toml! {
+            colorize_logs = false
+            servers = []
+        };
+        let empty_config = Config::new();
+        let parsed_config =
+            toml::from_str::<Config>(&toml_config.to_string()).expect("Failed to parse config");
+        assert_eq!(parsed_config, empty_config);
+    }
+
+    #[test]
+    fn test_parse_config() {
+        let toml_config = toml::toml! {
+            colorize_logs = true
+            [[servers]]
+            name = "A cool server"
+            host = "1.2.3.4"
+            port = 10666
+            password = "verysecure"
+            protoversion = "latest"
+
+            [[servers]]
+            name = "Another cool server"
+            host = "1.2.3.4"
+            port = 10667
+            password = "password"
+            protoversion = "1.0.0"
+        };
+        let config = Config {
+            colorize_logs: true,
+            servers: vec![
+                ServerConfig {
+                    name: "A cool server".to_string(),
+                    host: "1.2.3.4".to_string(),
+                    port: 10666,
+                    password: "verysecure".to_string(),
+                    protoversion: ProtocolVersion::Latest,
+                },
+                ServerConfig {
+                    name: "Another cool server".to_string(),
+                    host: "1.2.3.4".to_string(),
+                    port: 10667,
+                    password: "password".to_string(),
+                    protoversion: ProtocolVersion::Custom {
+                        major: 1,
+                        minor: 0,
+                        revision: 0,
+                    },
+                },
+            ],
+        };
+        let parsed_config =
+            toml::from_str::<Config>(&toml_config.to_string()).expect("Failed to parse config");
+        assert_eq!(parsed_config, config);
     }
 }

@@ -65,8 +65,7 @@ impl Serialize for ProtocolVersion {
     where
         S: serde::Serializer,
     {
-        serializer
-            .serialize_str(format!("{}.{}.{}", self.major, self.minor, self.revision).as_ref())
+        serializer.serialize_str(&format!("{}.{}.{}", self.major, self.minor, self.revision))
     }
 }
 
