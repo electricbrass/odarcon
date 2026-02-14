@@ -15,3 +15,6 @@ borders = "simple"  # Alternatives are "none" and "outset"
 
     highlight          = "#900"
     highlight_inactive = "#5555FF"
+
+[styles]
+    editable_text = { effects = [], front = "primary", back = "secondary" }

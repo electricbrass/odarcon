@@ -13,8 +13,9 @@
  */
 
 use cursive;
+use cursive::align::{HAlign, VAlign};
 use cursive::event::{Event, Key};
-use cursive::theme::{ColorStyle, ColorType, PaletteColor, Style};
+use cursive::theme::{ColorStyle, ColorType, PaletteColor, PaletteStyle, Style};
 use cursive::utils::markup::StyledString;
 use cursive::view::*;
 use cursive::views::*;
@@ -25,18 +26,131 @@ use tokio::runtime::Runtime;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+// use url::Url;
 
-use crate::protocol::{ClientMessage, ClientMessageType, ServerMessage};
 mod config;
 mod protocol;
 mod socket;
-// use url::Url;
+use crate::protocol::{ClientMessage, ClientMessageType, ServerMessage, ServerMessageType};
 
 // TODO: use directories to get XDG_STATE_HOME location and write stderr logs there
+// TODO: add mode for client commands, like alt c to switch modes or prefixing with ! or : or something
 
 fn main() {
     let mut siv = Cursive::default();
 
+    siv.load_toml(include_str!("../res/theme.toml")).unwrap();
+
+    #[cfg(debug_assertions)]
+    siv.add_global_callback(Event::CtrlChar('r'), |s| {
+        match s.load_theme_file("./res/theme.toml") {
+            Ok(_) => (),
+            Err(_e) => error_popup("theme.toml not found", s),
+        }
+    });
+
+    #[cfg(debug_assertions)]
+    siv.add_global_callback(Event::CtrlChar('e'), |s| {
+        error_popup("This is a test error popup", s)
+    });
+
+    #[cfg(debug_assertions)]
+    siv.add_global_callback(Event::CtrlChar('d'), |s| {
+        s.toggle_debug_console();
+    });
+
+    main_menu(&mut siv);
+
+    siv.run();
+}
+
+fn error_popup(message: &str, s: &mut Cursive) {
+    let mut text = StyledString::styled(
+        "Error:\n\n",
+        Style {
+            color: ColorStyle {
+                back: ColorType::InheritParent,
+                front: ColorType::Palette(PaletteColor::TitlePrimary),
+            },
+            ..Style::default()
+        },
+    );
+    text.append(StyledString::plain(message));
+    s.add_layer(Dialog::info(text).padding_left(3).padding_right(3)); // TODO: make this a little nicer
+    // only want padding applied to the message but not button or Error:
+}
+
+fn main_menu(siv: &mut Cursive) {
+    // rcon_layer(siv);
+    let mut quick_connect = ListView::new();
+
+    quick_connect.add_child("Hostname:", EditView::new().with_name("hostname"));
+
+    quick_connect.add_child("Port (optional):", EditView::new().with_name("port"));
+
+    quick_connect.add_child("Password:", EditView::new().secret().with_name("password"));
+
+    let quick_connect = Panel::new(PaddedView::new(
+        Margins {
+            left: 3,
+            right: 3,
+            top: 1,
+            bottom: 1,
+        },
+        LinearLayout::vertical()
+            .child(quick_connect)
+            .child(DummyView.fixed_height(1))
+            .child(Button::new("Connect", |s| {
+                let hostname = s.call_on_name("hostname", |v: &mut EditView| v.get_content());
+                let port = s.call_on_name("port", |v: &mut EditView| v.get_content());
+                let password = s.call_on_name("password", |v: &mut EditView| v.get_content());
+                s.pop_layer();
+                rcon_layer(
+                    s,
+                    hostname.unwrap().as_str(),
+                    port.unwrap().as_str(),
+                    password.unwrap().as_str(),
+                );
+            })),
+    ))
+    .title("Quick Connect");
+
+    let mut welcome = StyledString::new();
+    welcome.append_plain("Welcome to\n");
+    welcome.append_plain("Oda");
+    welcome.append_styled(
+        "RCON",
+        Style::from(ColorStyle {
+            front: ColorType::Palette(PaletteColor::TitlePrimary),
+            back: ColorType::InheritParent,
+        }),
+    );
+    welcome.append_plain("!");
+
+    let welcome = Panel::new(
+        TextView::new(welcome)
+            .h_align(HAlign::Center)
+            .v_align(cursive::align::VAlign::Center),
+    );
+
+    let servers = Panel::new(ListView::new()).title("Servers");
+
+    siv.add_fullscreen_layer(
+        LinearLayout::vertical()
+            .child(
+                LinearLayout::horizontal()
+                    // TODO: make these widths look better
+                    .child(quick_connect.full_width())
+                    // TODO: i want min_width to be 20 and be used for smaller screens
+                    // but right now the full_width on quick_connect
+                    // just makes this always use it's min width
+                    .child(welcome.min_width(32).max_width(32)),
+            )
+            .child(servers),
+    );
+}
+
+fn rcon_layer(siv: &mut Cursive, hostname: &str, port: &str, password: &str) {
     let output = TextView::new("")
         .with_name("output")
         .scrollable()
@@ -60,13 +174,6 @@ fn main() {
             }
         })
         .filler(" ")
-        .style(Style {
-            color: ColorStyle {
-                front: ColorType::Palette(PaletteColor::Primary),
-                back: ColorType::Palette(PaletteColor::Secondary),
-            },
-            ..Style::default()
-        })
         .with_name("input");
 
     let input_row = LinearLayout::horizontal()
@@ -85,7 +192,10 @@ fn main() {
         .child(Button::new("Button 2", |_| {}))
         .child(Button::new("Button 3", |_| {}))
         .child(DummyView.fixed_height(1))
-        .child(Button::new("Disconnect", |_| {}))
+        .child(Button::new("Disconnect", |s| {
+            s.pop_layer();
+            main_menu(s);
+        }))
         .child(Button::new("Quit", |s| s.quit()));
 
     let right_panel = Panel::new(right_pane).title("Actions").fixed_width(18);
@@ -130,26 +240,6 @@ fn main() {
 
     siv.add_fullscreen_layer(main_layout);
 
-    siv.load_toml(include_str!("../res/theme.toml")).unwrap();
-
-    #[cfg(debug_assertions)]
-    siv.add_global_callback(Event::CtrlChar('r'), |s| {
-        match s.load_theme_file("./res/theme.toml") {
-            Ok(_) => (),
-            Err(_e) => error_popup("theme.toml not found", s),
-        }
-    });
-
-    #[cfg(debug_assertions)]
-    siv.add_global_callback(Event::CtrlChar('e'), |s| {
-        error_popup("This is a test error popup", s)
-    });
-
-    #[cfg(debug_assertions)]
-    siv.add_global_callback(Event::CtrlChar('d'), |s| {
-        s.toggle_debug_console();
-    });
-
     siv.add_global_callback('/', |s| match s.focus_name("input") {
         Ok(cb) => cb.process(s),
         Err(_) => error_popup("Console input could not be focused", s),
@@ -166,24 +256,28 @@ fn main() {
     let rt = Runtime::new().unwrap();
 
     let cb_sink = siv.cb_sink().clone();
+    // TODO: make a visual distinction between prints from the client and from the server
+    // probably keep the > for the printing of commands, and for server logs nothing and for client logs some other character
     let print_to_console = move |text: String| {
         cb_sink
             .send(Box::new(move |s: &mut Cursive| {
                 s.call_on_name("output", |v: &mut TextView| {
-                    v.append(format!("> {}\n", text));
+                    v.append(format!("> {}", text));
                 });
             }))
             .unwrap();
     };
 
+    // print_to_console("this is something really really long wow look how long this is its so long wahoo wow woahhhhhhhhhhhhhhhh what is this why is this so long".to_string());
+
     rt.spawn(async move {
-        print_to_console("Starting connection...".to_string());
+        print_to_console("Starting connection...\n".to_string());
         // let url = Url::parse("ws://127.0.0.1:11666").unwrap();
         let mut req = "ws://127.0.0.1:10666".into_client_request().unwrap();
         req.headers_mut()
             .append("Sec-WebSocket-Protocol", "odamex-rcon".parse().unwrap()); // unwrap is safe with only ascii
         let (ws_stream, _) = connect_async(req).await.expect("Failed to connect");
-        print_to_console("Connected to websocket server!".to_string());
+        print_to_console("Connected to odamex server!\n".to_string());
 
         let (mut write, mut read) = ws_stream.split();
 
@@ -197,31 +291,21 @@ fn main() {
         while let Some(msg) = read.next().await {
             match msg {
                 Ok(Message::Text(txt)) => match txt.parse::<ServerMessage>() {
-                    Ok(message) => print_to_console(format!("Received: {}", message)),
-                    Err(e) => print_to_console(format!("Received invalid message: {}\n{}", txt, e)),
+                    Ok(message) => match message.content {
+                        ServerMessageType::Print { printlevel, text } => print_to_console(text),
+                        _ => print_to_console(format!("Received: {}\n", message)),
+                    },
+                    Err(e) => {
+                        print_to_console(format!("Received invalid message: {}\n{}\n", txt, e))
+                    }
                 },
                 Ok(Message::Binary(_)) => {}
-                Ok(Message::Close(_)) => break,
+                Ok(Message::Close(_)) => {
+                    print_to_console("Connection to server has been closed\n".to_string());
+                    break;
+                }
                 _ => {}
             }
         }
     });
-
-    siv.run();
-}
-
-fn error_popup(message: &str, s: &mut Cursive) {
-    let mut text = StyledString::styled(
-        "Error:\n\n",
-        Style {
-            color: ColorStyle {
-                back: ColorType::InheritParent,
-                front: ColorType::Palette(PaletteColor::TitlePrimary),
-            },
-            ..Style::default()
-        },
-    );
-    text.append(StyledString::plain(message));
-    s.add_layer(Dialog::info(text).padding_left(3).padding_right(3)); // TODO: make this a little nicer
-    // only want padding applied to the message but not button or Error:
 }
