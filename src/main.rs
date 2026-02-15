@@ -222,6 +222,7 @@ fn main_menu(siv: &mut Cursive) {
             ugh("Example Server 9"),
             ugh("Example Server 10"),
         ],
+        logcolors: std::collections::HashMap::new(),
     };
     let mut servers = SelectView::new();
     // TODO: need to add delete, edit, and reorder buttons somehow

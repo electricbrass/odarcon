@@ -53,6 +53,12 @@ pub enum ServerMessageType {
     Maplist,
 }
 
+pub const LATEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion {
+    major: 1,
+    minor: 0,
+    revision: 0,
+};
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ProtocolVersion {
     pub major: u8,

@@ -12,10 +12,17 @@
  * GNU General Public License for more details.
  */
 
+use crate::protocol;
+use crate::protocol::PrintLevel;
+use cursive::theme::BaseColor;
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::str::FromStr;
 use thiserror::Error;
 use toml;
+
+type CursiveColor = cursive::theme::Color;
 
 #[derive(Debug, Error)]
 pub enum ConfigError {
@@ -33,6 +40,23 @@ pub enum ConfigError {
 pub enum ProtocolVersion {
     Latest,
     Custom { major: u8, minor: u8, revision: u8 },
+}
+
+impl Into<protocol::ProtocolVersion> for ProtocolVersion {
+    fn into(self) -> protocol::ProtocolVersion {
+        match self {
+            ProtocolVersion::Latest => protocol::LATEST_PROTOCOL_VERSION,
+            ProtocolVersion::Custom {
+                major,
+                minor,
+                revision,
+            } => protocol::ProtocolVersion {
+                major,
+                minor,
+                revision,
+            },
+        }
+    }
 }
 
 // TODO: implement into for config::protocolversion to protocol::protocolversion
@@ -111,11 +135,71 @@ impl Default for ServerConfig {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct Color(pub CursiveColor);
+
+impl From<CursiveColor> for Color {
+    fn from(color: CursiveColor) -> Self {
+        Color(color)
+    }
+}
+
+impl Into<CursiveColor> for Color {
+    fn into(self) -> CursiveColor {
+        self.0
+    }
+}
+
+impl Serialize for Color {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let basecolor_str = |c: BaseColor| match c {
+            BaseColor::Black => "black",
+            BaseColor::Red => "red",
+            BaseColor::Green => "green",
+            BaseColor::Yellow => "yellow",
+            BaseColor::Blue => "blue",
+            BaseColor::Magenta => "magenta",
+            BaseColor::Cyan => "cyan",
+            BaseColor::White => "white",
+        };
+
+        match self.0 {
+            CursiveColor::TerminalDefault => serializer.serialize_str("default"),
+            CursiveColor::Rgb(r, g, b) => {
+                serializer.serialize_str(&format!("#{:02X}{:02X}{:02X}", r, g, b))
+            }
+            CursiveColor::RgbLowRes(r, g, b) => {
+                serializer.serialize_str(&format!("#{:X}{:X}{:X}", r, g, b))
+            }
+            CursiveColor::Light(basecolor) => {
+                serializer.serialize_str(&format!("light {}", basecolor_str(basecolor)))
+            }
+            CursiveColor::Dark(basecolor) => serializer.serialize_str(basecolor_str(basecolor)),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Color {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        let color = CursiveColor::from_str(&s).unwrap();
+        Ok(Color(color))
+    }
+}
+
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     pub colorize_logs: bool,
     pub servers: Vec<ServerConfig>,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub logcolors: HashMap<PrintLevel, Color>,
 }
 
 impl Config {
@@ -151,8 +235,9 @@ impl Config {
 
     pub fn new() -> Self {
         Self {
-            servers: Vec::new(),
             colorize_logs: false,
+            servers: Vec::new(),
+            logcolors: HashMap::new(),
         }
     }
 
@@ -194,6 +279,9 @@ mod tests {
             port = 10667
             password = "password"
             protoversion = "1.0.0"
+
+            [logcolors]
+            error = "#FF0000"
         };
         let config = Config {
             colorize_logs: true,
@@ -217,6 +305,7 @@ mod tests {
                     },
                 },
             ],
+            logcolors: HashMap::from([(PrintLevel::Error, Color(CursiveColor::Rgb(255, 0, 0)))]),
         };
         let parsed_config =
             toml::from_str::<Config>(&toml_config.to_string()).expect("Failed to parse config");
