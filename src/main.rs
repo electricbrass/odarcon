@@ -81,6 +81,8 @@ async fn main() {
         Config::new()
     });
 
+    siv.set_user_data(AppState { config });
+
     siv.run();
 }
 
@@ -183,7 +185,9 @@ fn main_menu(siv: &mut Cursive) {
             .child(DummyView.fixed_height(1))
             .child(TextView::new(welcome).h_align(HAlign::Center))
             .child(DummyView.fixed_height(1))
-            .child(Button::new("Settings", |_| {}))
+            .child(Button::new("Settings", |s| {
+                settings(s);
+            }))
             .child(Button::new("About", |s| {
                 s.add_layer(
                     Dialog::info(format!(
@@ -249,6 +253,32 @@ fn main_menu(siv: &mut Cursive) {
                     .child(welcome.min_width(32).max_width(32)),
             )
             .child(servers.full_height()),
+    );
+}
+
+fn settings(siv: &mut Cursive) {
+    let config = &siv.user_data::<AppState>().unwrap().config; // TODO: no unwrap pls, maybe move to its own get_config function
+    let mut settings = ListView::new();
+    settings.add_child(
+        "Colorize server log",
+        Checkbox::new()
+            .with_checked(config.colorize_logs)
+            .with_name("colorize_logs"),
+    );
+    siv.add_layer(
+        Dialog::around(settings)
+            .title("Settings")
+            .dismiss_button("Cancel")
+            .button("Save", |s| {
+                let colorize = s
+                    .call_on_name("colorize_logs", |v: &mut Checkbox| v.is_checked())
+                    .unwrap();
+                s.with_user_data(|state: &mut AppState| {
+                    state.config.colorize_logs = colorize;
+                    state.config.save().unwrap(); // TODO dont just unwrap here
+                });
+                s.pop_layer();
+            }),
     );
 }
 

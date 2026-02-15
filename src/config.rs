@@ -166,7 +166,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_empty_config() {
+    fn parse_empty_config() {
         let toml_config = toml::toml! {
             colorize_logs = false
             servers = []
@@ -178,7 +178,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_config() {
+    fn parse_config() {
         let toml_config = toml::toml! {
             colorize_logs = true
             [[servers]]
@@ -221,5 +221,75 @@ mod tests {
         let parsed_config =
             toml::from_str::<Config>(&toml_config.to_string()).expect("Failed to parse config");
         assert_eq!(parsed_config, config);
+    }
+
+    #[test]
+    fn parse_config_missing_name() {
+        let toml_config = toml::toml! {
+            colorize_logs = false
+            [[servers]]
+                host = "1.2.3.4"
+                port = 10667
+                password = "password"
+                protoversion = "1.0.0"
+        };
+        let parsed_config = toml::from_str::<Config>(&toml_config.to_string());
+        assert!(parsed_config.is_err());
+    }
+
+    #[test]
+    fn parse_config_missing_host() {
+        let toml_config = toml::toml! {
+            colorize_logs = false
+            [[servers]]
+                name = "Another cool server"
+                port = 10667
+                password = "password"
+                protoversion = "1.0.0"
+        };
+        let parsed_config = toml::from_str::<Config>(&toml_config.to_string());
+        assert!(parsed_config.is_err());
+    }
+
+    #[test]
+    fn parse_config_missing_port() {
+        let toml_config = toml::toml! {
+            colorize_logs = false
+            [[servers]]
+                name = "Another cool server"
+                host = "1.2.3.4"
+                password = "password"
+                protoversion = "1.0.0"
+        };
+        let parsed_config = toml::from_str::<Config>(&toml_config.to_string());
+        assert!(parsed_config.is_err());
+    }
+
+    #[test]
+    fn parse_config_missing_password() {
+        let toml_config = toml::toml! {
+            colorize_logs = false
+            [[servers]]
+                name = "Another cool server"
+                host = "1.2.3.4"
+                port = 10667
+                protoversion = "1.0.0"
+        };
+        let parsed_config = toml::from_str::<Config>(&toml_config.to_string());
+        assert!(parsed_config.is_err());
+    }
+
+    #[test]
+    fn parse_config_missing_protoversion() {
+        let toml_config = toml::toml! {
+            colorize_logs = false
+            [[servers]]
+                name = "Another cool server"
+                host = "1.2.3.4"
+                port = 10667
+                password = "password"
+        };
+        let parsed_config = toml::from_str::<Config>(&toml_config.to_string());
+        assert!(parsed_config.is_err());
     }
 }
