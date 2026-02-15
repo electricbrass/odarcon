@@ -12,9 +12,9 @@
  * GNU General Public License for more details.
  */
 
-use cursive;
 use cursive::align::{HAlign, VAlign};
 use cursive::event::{Event, Key};
+use cursive::theme;
 use cursive::theme::{ColorStyle, ColorType, Effect, Effects, PaletteColor, PaletteStyle, Style};
 use cursive::utils::markup::StyledString;
 use cursive::view::*;
@@ -22,8 +22,6 @@ use cursive::views::*;
 use cursive::views::{EditView, LinearLayout, TextView};
 use cursive::{Cursive, CursiveExt};
 use futures_util::{SinkExt, StreamExt};
-use tokio::runtime::Runtime;
-use tokio::time::error;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
@@ -53,13 +51,20 @@ async fn main() {
 
     let mut siv = Cursive::default();
 
-    siv.load_toml(include_str!("../res/theme.toml")).unwrap();
-
     #[cfg(debug_assertions)]
+    // hot reload default theme for testing
     siv.add_global_callback(Event::CtrlChar('r'), |s| {
-        match s.load_theme_file("./res/theme.toml") {
-            Ok(_) => (),
-            Err(_e) => error_popup("theme.toml not found", s),
+        if let Err(e) = s.load_theme_file("./res/theme.toml") {
+            match e {
+                theme::Error::Io(io_error) => {
+                    error_popup("theme.toml could not be loaded", s);
+                    log::error!("theme.toml could not be loaded: {io_error}");
+                }
+                theme::Error::Parse(parse_error) => {
+                    error_popup("theme.toml could not be parsed", s);
+                    log::error!("theme.toml could not be parsed: {parse_error}");
+                }
+            }
         }
     });
 
@@ -76,12 +81,32 @@ async fn main() {
     main_menu(&mut siv);
 
     let config = Config::load().unwrap_or_else(|e| {
+        // TODO: make the popup more informative
         error_popup("Config file could not be loaded", &mut siv);
         log::error!("Config file could not be loaded: {e}");
         Config::new()
     });
 
     siv.set_user_data(AppState { config });
+
+    if let Some(themefile) = Config::config_dir().map(|dir| dir.join("theme.toml"))
+        && themefile.exists()
+    {
+        if let Err(e) = siv.load_theme_file(themefile) {
+            // TODO: make the popup more informative
+            error_popup("Theme file could not be loaded", &mut siv);
+            match e {
+                theme::Error::Io(io_error) => {
+                    log::error!("Theme file could not be loaded: {io_error}");
+                }
+                theme::Error::Parse(parse_error) => {
+                    log::error!("Theme file could not be parsed: {parse_error}");
+                }
+            }
+        };
+    } else {
+        siv.load_toml(include_str!("../res/theme.toml")).unwrap();
+    }
 
     siv.run();
 }

@@ -59,9 +59,6 @@ impl From<ProtocolVersion> for protocol::ProtocolVersion {
     }
 }
 
-// TODO: implement into for config::protocolversion to protocol::protocolversion
-// custom is easy, latest needs a constant to represent the latest
-
 impl Serialize for ProtocolVersion {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -204,7 +201,7 @@ pub struct Config {
 }
 
 impl Config {
-    fn config_dir() -> Option<std::path::PathBuf> {
+    pub fn config_dir() -> Option<std::path::PathBuf> {
         ProjectDirs::from("net", "odamex", "odarcon").map(|dirs| dirs.config_dir().to_path_buf())
     }
 
@@ -213,7 +210,7 @@ impl Config {
         let config_path = config_dir.join("config.toml");
 
         if !config_path.exists() {
-            return Ok(Self::new());
+            return Ok(Self::default());
         }
 
         let config_str = std::fs::read_to_string(config_path)?;
@@ -228,7 +225,7 @@ impl Config {
 
         std::fs::create_dir_all(&config_dir)?;
 
-        let config_str = toml::to_string_pretty(self)?; // need to actually return error here
+        let config_str = toml::to_string_pretty(self)?;
         std::fs::write(config_path, config_str)?;
 
         Ok(())
@@ -244,6 +241,16 @@ impl Config {
 
     pub fn add_server(&mut self, server: ServerConfig) {
         self.servers.push(server);
+    }
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            colorize_logs: false,
+            servers: Vec::new(),
+            logcolors: toml::from_str(include_str!("../res/logcolors.toml")).unwrap(),
+        }
     }
 }
 
@@ -378,6 +385,26 @@ mod tests {
                 host = "1.2.3.4"
                 port = 10667
                 password = "password"
+        };
+        let parsed_config = toml::from_str::<Config>(&toml_config.to_string());
+        assert!(parsed_config.is_err());
+    }
+
+    #[test]
+    fn parse_config_bad_colorn() {
+        let toml_config = toml::toml! {
+            colorize_logs = false
+            servers = []
+            [logcolors]
+            what = "red"
+        };
+        let parsed_config = toml::from_str::<Config>(&toml_config.to_string());
+        assert!(parsed_config.is_err());
+        let toml_config = toml::toml! {
+            colorize_logs = false
+            servers = []
+            [logcolors]
+            error = "1234567"
         };
         let parsed_config = toml::from_str::<Config>(&toml_config.to_string());
         assert!(parsed_config.is_err());

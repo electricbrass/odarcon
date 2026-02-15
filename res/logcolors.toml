@@ -1,0 +1,8 @@
+pickup = "white"
+obituary = "white"
+high = "white"
+chat = "green"
+teamchat = "green"
+serverchat = "green"
+warning = "yellow"
+error = "red"
