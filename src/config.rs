@@ -42,9 +42,9 @@ pub enum ProtocolVersion {
     Custom { major: u8, minor: u8, revision: u8 },
 }
 
-impl Into<protocol::ProtocolVersion> for ProtocolVersion {
-    fn into(self) -> protocol::ProtocolVersion {
-        match self {
+impl From<ProtocolVersion> for protocol::ProtocolVersion {
+    fn from(version: ProtocolVersion) -> protocol::ProtocolVersion {
+        match version {
             ProtocolVersion::Latest => protocol::LATEST_PROTOCOL_VERSION,
             ProtocolVersion::Custom {
                 major,
@@ -144,9 +144,9 @@ impl From<CursiveColor> for Color {
     }
 }
 
-impl Into<CursiveColor> for Color {
-    fn into(self) -> CursiveColor {
-        self.0
+impl From<Color> for CursiveColor {
+    fn from(color: Color) -> Self {
+        color.0
     }
 }
 
@@ -188,7 +188,8 @@ impl<'de> Deserialize<'de> for Color {
         D: serde::Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        let color = CursiveColor::from_str(&s).unwrap();
+        let color = CursiveColor::from_str(&s)
+            .map_err(|e| serde::de::Error::custom(format!("Invalid color: {e}")))?;
         Ok(Color(color))
     }
 }
@@ -380,5 +381,15 @@ mod tests {
         };
         let parsed_config = toml::from_str::<Config>(&toml_config.to_string());
         assert!(parsed_config.is_err());
+    }
+
+    #[test]
+    fn color_conversion() {
+        let curcolor = CursiveColor::Dark(BaseColor::Red);
+        let mycolor = Color(curcolor.clone());
+        assert_eq!(curcolor, mycolor.clone().into());
+        assert_eq!(Color::from(curcolor), mycolor.clone());
+        assert_eq!(mycolor, curcolor.into());
+        assert_eq!(CursiveColor::from(mycolor), curcolor);
     }
 }
