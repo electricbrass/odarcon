@@ -20,7 +20,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::str::FromStr;
 use thiserror::Error;
-use toml;
 
 type CursiveColor = cursive::theme::Color;
 

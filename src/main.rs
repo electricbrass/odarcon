@@ -153,10 +153,23 @@ fn filter_port(name: &str, siv: &mut Cursive, content: &str) {
     }
 }
 
+fn verify_port(port: &str, siv: &mut Cursive) -> Option<u16> {
+    if port.is_empty() {
+        return Some(10666);
+    }
+
+    match port.parse::<u16>() {
+        Ok(port) => Some(port),
+        Err(_) => {
+            error_popup("Port must be in the range 0-65535", siv);
+            None
+        }
+    }
+}
+
 fn main_menu(siv: &mut Cursive) {
     let mut quick_connect = ListView::new();
     quick_connect.add_child("Hostname:", EditView::new().with_name("hostname"));
-    // TODO: make it so that port is limited to 0-65535 range
     quick_connect.add_child(
         "Port (optional):",
         EditView::new()
@@ -179,13 +192,10 @@ fn main_menu(siv: &mut Cursive) {
                 let hostname = s.call_on_name("hostname", |v: &mut EditView| v.get_content());
                 let port = s.call_on_name("port", |v: &mut EditView| v.get_content());
                 let password = s.call_on_name("password", |v: &mut EditView| v.get_content());
-                s.pop_layer();
-                rcon_layer(
-                    s,
-                    hostname.unwrap().as_str(),
-                    port.unwrap().as_str().parse().unwrap_or(10666),
-                    password.unwrap().as_str(),
-                );
+                if let Some(port) = verify_port(&port.unwrap(), s) {
+                    s.pop_layer();
+                    rcon_layer(s, &hostname.unwrap(), port, &password.unwrap());
+                }
             })),
     ))
     .title("Quick Connect");
@@ -293,17 +303,23 @@ fn settings(siv: &mut Cursive) {
     );
     siv.add_layer(
         Dialog::around(settings)
+            .padding_top(1)
             .title("Settings")
             .dismiss_button("Cancel")
             .button("Save", |s| {
                 let colorize = s
                     .call_on_name("colorize_logs", |v: &mut Checkbox| v.is_checked())
                     .unwrap();
-                s.with_user_data(|state: &mut AppState| {
+                if let Some(Err(e)) = s.with_user_data(|state: &mut AppState| {
                     state.config.colorize_logs = colorize;
-                    state.config.save().unwrap(); // TODO dont just unwrap here
-                });
-                s.pop_layer();
+                    state.config.save()
+                }) {
+                    // TODO: make the popup more informative
+                    error_popup("Config file could not be saved", s);
+                    log::error!("Config file could not be saved: {e}");
+                } else {
+                    s.pop_layer();
+                }
             }),
     );
 }
