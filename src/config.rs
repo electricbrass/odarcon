@@ -18,6 +18,7 @@ use cursive::theme::BaseColor;
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::str::FromStr;
 use thiserror::Error;
 
@@ -39,6 +40,28 @@ pub enum ConfigError {
 pub enum ProtocolVersion {
     Latest,
     Custom { major: u8, minor: u8, revision: u8 },
+}
+
+impl Display for ProtocolVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ProtocolVersion::Latest => write!(
+                f,
+                "latest ({}.{}.{})",
+                protocol::LATEST_PROTOCOL_VERSION.major,
+                protocol::LATEST_PROTOCOL_VERSION.minor,
+                protocol::LATEST_PROTOCOL_VERSION.revision
+            ),
+            // TODO: make this display like "1.0.0 (Odamex 12.2.0)"
+            // wait until an actual odamex release supports it tho lol
+            // need a map somewhere to get that info from
+            ProtocolVersion::Custom {
+                major,
+                minor,
+                revision,
+            } => write!(f, "{}.{}.{}", major, minor, revision),
+        }
+    }
 }
 
 impl From<ProtocolVersion> for protocol::ProtocolVersion {
@@ -234,7 +257,9 @@ impl Config {
         Self {
             colorize_logs: false,
             servers: Vec::new(),
-            logcolors: HashMap::new(),
+            // TODO: maybe do something different so that if a user doesnt change the colors
+            // an old config doesnt leave them with old colors if they change in an update
+            logcolors: toml::from_str(include_str!("../res/logcolors.toml")).unwrap(),
         }
     }
 
@@ -245,11 +270,7 @@ impl Config {
 
 impl Default for Config {
     fn default() -> Self {
-        Self {
-            colorize_logs: false,
-            servers: Vec::new(),
-            logcolors: toml::from_str(include_str!("../res/logcolors.toml")).unwrap(),
-        }
+        Self::new()
     }
 }
 

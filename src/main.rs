@@ -30,7 +30,7 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 mod config;
 mod protocol;
 mod socket;
-use crate::config::Config;
+use crate::config::{Config, ServerConfig};
 use crate::protocol::{ClientMessage, ClientMessageType, ServerMessage, ServerMessageType};
 
 // TODO: use directories to get XDG_STATE_HOME location and write stderr logs there
@@ -84,7 +84,7 @@ async fn main() {
         // TODO: make the popup more informative
         error_popup("Config file could not be loaded", &mut siv);
         log::error!("Config file could not be loaded: {e}");
-        Config::new()
+        Config::default()
     });
 
     siv.set_user_data(AppState { config });
@@ -272,7 +272,9 @@ fn main_menu(siv: &mut Cursive) {
     let servers = Panel::new(servers.scrollable());
     let servers = Panel::new(
         LinearLayout::vertical()
-            .child(LinearLayout::horizontal().child(Button::new("New", |_| {})))
+            .child(LinearLayout::horizontal().child(Button::new("New", |s| {
+                edit_server(s, "New Server", None);
+            })))
             .child(servers),
     )
     .title("Servers");
@@ -322,6 +324,57 @@ fn settings(siv: &mut Cursive) {
                 }
             }),
     );
+}
+
+fn edit_server(siv: &mut Cursive, title: &str, server_index: Option<usize>) {
+    let mut server_settings = ListView::new();
+    server_settings.add_child("Name:", EditView::new().with_name("server_name"));
+    server_settings.add_child("Hostname:", EditView::new().with_name("server_hostname"));
+    server_settings.add_child(
+        "Port (optional):",
+        EditView::new()
+            .on_edit(|s, content, _| filter_port("server_port", s, content))
+            .with_name("server_port"),
+    );
+    server_settings.add_child(
+        "Password:",
+        EditView::new().secret().with_name("server_password"),
+    );
+
+    let edit_dialog = Dialog::around(server_settings)
+        .title(title)
+        .dismiss_button("Cancel")
+        .button("Save", move |s| {
+            let name = s.call_on_name("server_name", |v: &mut EditView| v.get_content());
+            let hostname = s.call_on_name("server_hostname", |v: &mut EditView| v.get_content());
+            let port = s.call_on_name("server_port", |v: &mut EditView| v.get_content());
+            let password = s.call_on_name("server_password", |v: &mut EditView| v.get_content());
+            if let Some(port) = verify_port(&port.unwrap(), s) {
+                let server = ServerConfig {
+                    // TODO: dont just do unwraps, add way to input protocol version
+                    name: name.unwrap().to_string(),
+                    host: hostname.unwrap().to_string(),
+                    port,
+                    password: password.unwrap().to_string(),
+                    protoversion: config::ProtocolVersion::Latest,
+                };
+                if let Some(Err(e)) = s.with_user_data(|state: &mut AppState| {
+                    match server_index {
+                        Some(index) => state.config.servers[index] = server,
+                        None => state.config.add_server(server),
+                    }
+                    state.config.save()
+                }) {
+                    // TODO: make the popup more informative
+                    error_popup("Config file could not be saved", s);
+                    log::error!("Config file could not be saved: {e}");
+                } else {
+                    s.pop_layer();
+                }
+            }
+        })
+        .min_width(56);
+    siv.add_layer(edit_dialog);
 }
 
 fn rcon_layer(siv: &mut Cursive, hostname: &str, port: u16, password: &str) {
