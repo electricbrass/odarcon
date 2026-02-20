@@ -253,13 +253,11 @@ impl Config {
         Ok(())
     }
 
-    pub fn new() -> Self {
+    pub fn empty() -> Self {
         Self {
             colorize_logs: false,
             servers: Vec::new(),
-            // TODO: maybe do something different so that if a user doesnt change the colors
-            // an old config doesnt leave them with old colors if they change in an update
-            logcolors: toml::from_str(include_str!("../res/logcolors.toml")).unwrap(),
+            logcolors: HashMap::new(),
         }
     }
 
@@ -270,7 +268,13 @@ impl Config {
 
 impl Default for Config {
     fn default() -> Self {
-        Self::new()
+        Self {
+            colorize_logs: false,
+            servers: Vec::new(),
+            // TODO: maybe do something different so that if a user doesnt change the colors
+            // an old config doesnt leave them with old colors if they change in an update
+            logcolors: toml::from_str(include_str!("../res/logcolors.toml")).unwrap(),
+        }
     }
 }
 
@@ -284,7 +288,7 @@ mod tests {
             colorize_logs = false
             servers = []
         };
-        let empty_config = Config::new();
+        let empty_config = Config::empty();
         let parsed_config =
             toml::from_str::<Config>(&toml_config.to_string()).expect("Failed to parse config");
         assert_eq!(parsed_config, empty_config);
