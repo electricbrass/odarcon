@@ -140,7 +140,7 @@ pub struct Message<T: MessageContent> {
 
 impl<T: MessageContent> Message<T> {
     pub fn new(content: T) -> Self {
-        static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
+        static NEXT_ID: AtomicUsize = AtomicUsize::new(1);
         Self {
             id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
             content,
