@@ -235,13 +235,34 @@ fn main_menu(siv: &mut Cursive) {
             })),
     );
 
+    let servers = Panel::new(server_list(siv)).title("Servers");
+
+    siv.add_fullscreen_layer(
+        LinearLayout::vertical()
+            .child(
+                LinearLayout::horizontal()
+                    // TODO: make these widths look better
+                    .child(quick_connect.full_width())
+                    // TODO: i want min_width to be 20 and be used for smaller screens
+                    // but right now the full_width on quick_connect
+                    // just makes this always use it's min width
+                    .child(welcome.min_width(32).max_width(32)),
+            )
+            .child(servers.full_height()),
+    );
+}
+
+fn server_list(siv: &mut Cursive) -> impl cursive::View {
+    let modes = SelectView::new()
+        .with_all(vec![("Connect", 1), ("Edit", 2), ("Delete", 3)])
+        .popup();
     // TODO: REMOVE THIS AND REPLACE WITH REAL CONFIG
-    let ugh = |x: &str| crate::config::ServerConfig {
+    let ugh = |x: &str| ServerConfig {
         name: x.to_string(),
         host: "127.0.0.1".to_string(),
         port: 10666,
         password: "12345".to_string(),
-        protoversion: crate::config::ProtocolVersion::Latest,
+        protoversion: config::ProtocolVersion::Latest,
     };
     let fakeconfig = Config {
         colorize_logs: false,
@@ -266,32 +287,22 @@ fn main_menu(siv: &mut Cursive) {
         servers.add_item(&server.name, server.clone());
     }
     servers.set_on_submit(|s, server| {
+        // s.add_layer(modes);
         s.pop_layer();
         rcon_layer(s, &server.host, server.port, &server.password)
     });
     let servers = Panel::new(servers.scrollable());
-    let servers = Panel::new(
-        LinearLayout::vertical()
-            .child(LinearLayout::horizontal().child(Button::new("New", |s| {
-                edit_server(s, "New Server", None);
-            })))
-            .child(servers),
-    )
-    .title("Servers");
-
-    siv.add_fullscreen_layer(
-        LinearLayout::vertical()
-            .child(
-                LinearLayout::horizontal()
-                    // TODO: make these widths look better
-                    .child(quick_connect.full_width())
-                    // TODO: i want min_width to be 20 and be used for smaller screens
-                    // but right now the full_width on quick_connect
-                    // just makes this always use it's min width
-                    .child(welcome.min_width(32).max_width(32)),
-            )
-            .child(servers.full_height()),
-    );
+    LinearLayout::vertical()
+        .child(
+            LinearLayout::horizontal()
+                .child(TextView::new(" Mode: "))
+                .child(modes)
+                .child(TextView::new(" | "))
+                .child(Button::new("New", |s| {
+                    edit_server(s, "New Server", None);
+                })),
+        )
+        .child(servers)
 }
 
 fn settings(siv: &mut Cursive) {
@@ -340,6 +351,19 @@ fn edit_server(siv: &mut Cursive, title: &str, server_index: Option<usize>) {
         "Password:",
         EditView::new().secret().with_name("server_password"),
     );
+    // TODO: get the labels from to_string or something on the versions
+    let protocol_versions = SelectView::new().popup().with_all(vec![
+        ("Latest (1.0.0)", config::ProtocolVersion::Latest),
+        (
+            "1.0.0",
+            config::ProtocolVersion::Custom {
+                major: 1,
+                minor: 0,
+                revision: 0,
+            },
+        ),
+    ]);
+    server_settings.add_child("Protocol Version:", protocol_versions);
 
     let edit_dialog = Dialog::around(server_settings)
         .title(title)
