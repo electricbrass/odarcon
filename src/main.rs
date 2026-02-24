@@ -352,17 +352,20 @@ fn edit_server(siv: &mut Cursive, title: &str, server_index: Option<usize>) {
         EditView::new().secret().with_name("server_password"),
     );
     // TODO: get the labels from to_string or something on the versions
-    let protocol_versions = SelectView::new().popup().with_all(vec![
-        ("Latest (1.0.0)", config::ProtocolVersion::Latest),
-        (
-            "1.0.0",
-            config::ProtocolVersion::Custom {
-                major: 1,
-                minor: 0,
-                revision: 0,
-            },
-        ),
-    ]);
+    let protocol_versions = SelectView::new()
+        .popup()
+        .with_all(vec![
+            ("Latest (1.0.0)", config::ProtocolVersion::Latest),
+            (
+                "1.0.0",
+                config::ProtocolVersion::Custom {
+                    major: 1,
+                    minor: 0,
+                    revision: 0,
+                },
+            ),
+        ])
+        .with_name("protocol_version");
     server_settings.add_child("Protocol Version:", protocol_versions);
 
     let edit_dialog = Dialog::around(server_settings)
@@ -373,14 +376,24 @@ fn edit_server(siv: &mut Cursive, title: &str, server_index: Option<usize>) {
             let hostname = s.call_on_name("server_hostname", |v: &mut EditView| v.get_content());
             let port = s.call_on_name("server_port", |v: &mut EditView| v.get_content());
             let password = s.call_on_name("server_password", |v: &mut EditView| v.get_content());
+            let protocol = s.call_on_name(
+                "protocol_version",
+                |v: &mut SelectView<config::ProtocolVersion>| {
+                    let id = v.selected_id();
+                    match id {
+                        Some(id) => *v.get_item(id).unwrap().1,
+                        None => config::ProtocolVersion::Latest,
+                    }
+                },
+            );
             if let Some(port) = verify_port(&port.unwrap(), s) {
                 let server = ServerConfig {
-                    // TODO: dont just do unwraps, add way to input protocol version
+                    // TODO: dont just do unwraps
                     name: name.unwrap().to_string(),
                     host: hostname.unwrap().to_string(),
                     port,
                     password: password.unwrap().to_string(),
-                    protoversion: config::ProtocolVersion::Latest,
+                    protoversion: protocol.unwrap(),
                 };
                 if let Some(Err(e)) = s.with_user_data(|state: &mut AppState| {
                     match server_index {
