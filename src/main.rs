@@ -31,7 +31,10 @@ mod config;
 mod protocol;
 mod socket;
 use crate::config::{Config, ServerConfig};
-use crate::protocol::{ClientMessage, ClientMessageType, ServerMessage, ServerMessageType};
+use crate::protocol::{
+    ClientMessage, ClientMessageType, PrintLevel, ServerMessage, ServerMessageType,
+};
+use crate::socket::RCONSocket;
 
 // TODO: use directories to get XDG_STATE_HOME location and write stderr logs there
 // TODO: add mode for client commands, like alt c to switch modes or prefixing with ! or : or something
@@ -42,6 +45,7 @@ use crate::protocol::{ClientMessage, ClientMessageType, ServerMessage, ServerMes
 
 struct AppState {
     config: Config,
+    connection: Option<RCONSocket>,
 }
 
 #[tokio::main]
@@ -85,7 +89,10 @@ async fn main() {
         Config::default()
     });
 
-    siv.set_user_data(AppState { config });
+    siv.set_user_data(AppState {
+        config,
+        connection: None,
+    });
 
     main_menu(&mut siv);
 
@@ -513,11 +520,11 @@ fn rcon_layer(siv: &mut Cursive, hostname: &str, port: u16, password: &str) {
                 v.set_content("");
             });
 
-            let json_msg =
-                ClientMessage::new(ClientMessageType::Command(text.to_string())).serialize();
-            if let Some(tx) = s.user_data::<tokio::sync::mpsc::UnboundedSender<String>>() {
-                let _ = tx.send(json_msg);
-            }
+            let json_msg = ClientMessage::new(ClientMessageType::Command(text.to_string()));
+            s.with_user_data(|state: &mut AppState| {
+                // TODO: probably shouldnt just unwrap here
+                state.connection.as_ref().unwrap().send(json_msg)
+            });
         })
         .filler(" ")
         .with_name("input");
@@ -596,13 +603,10 @@ fn rcon_layer(siv: &mut Cursive, hostname: &str, port: u16, password: &str) {
 
     siv.add_fullscreen_layer(layer);
 
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
-    siv.set_user_data(tx);
-
     let cb_sink = siv.cb_sink().clone();
     // TODO: make a visual distinction between prints from the client and from the server
     // probably keep the > for the printing of commands, and for server logs nothing and for client logs some other character
-    let print_to_console = move |text: String| {
+    let print_to_console = move |text: String, level: Option<PrintLevel>| {
         cb_sink
             .send(Box::new(move |s: &mut Cursive| {
                 s.call_on_name("output", |v: &mut TextView| {
@@ -612,44 +616,15 @@ fn rcon_layer(siv: &mut Cursive, hostname: &str, port: u16, password: &str) {
             .unwrap();
     };
 
-    // print_to_console("this is something really really long wow look how long this is its so long wahoo wow woahhhhhhhhhhhhhhhh what is this why is this so long".to_string());
+    let new_connection = RCONSocket::connect(hostname, port, password, print_to_console.clone());
 
-    tokio::spawn(async move {
-        print_to_console("Starting connection...\n".to_string());
-        // let url = Url::parse("ws://127.0.0.1:11666").unwrap();
-        let mut req = "ws://127.0.0.1:10666".into_client_request().unwrap();
-        req.headers_mut()
-            .append("Sec-WebSocket-Protocol", "odamex-rcon".parse().unwrap()); // unwrap is safe with only ascii
-        let (ws_stream, _) = connect_async(req).await.expect("Failed to connect");
-        print_to_console("Connected to odamex server!\n".to_string());
-
-        let (mut write, mut read) = ws_stream.split();
-
-        tokio::spawn(async move {
-            while let Some(msg) = rx.recv().await {
-                let _ = write.send(Message::Text(msg.into())).await;
-            }
-        });
-
-        // read messages from websocket
-        while let Some(msg) = read.next().await {
-            match msg {
-                Ok(Message::Text(txt)) => match txt.parse::<ServerMessage>() {
-                    Ok(message) => match message.content {
-                        ServerMessageType::Print { printlevel, text } => print_to_console(text),
-                        _ => print_to_console(format!("Received: {}\n", message)),
-                    },
-                    Err(e) => {
-                        print_to_console(format!("Received invalid message: {}\n{}\n", txt, e))
-                    }
-                },
-                Ok(Message::Binary(_)) => {}
-                Ok(Message::Close(_)) => {
-                    print_to_console("Connection to server has been closed\n".to_string());
-                    break;
-                }
-                _ => {}
-            }
+    match new_connection {
+        Ok(connection) => {
+            // TOOD: unwrap?
+            siv.user_data::<AppState>().unwrap().connection = Some(connection);
         }
-    });
+        Err(err) => {
+            // error_popup("Failed to connect to server", err.to_string());
+        }
+    }
 }
