@@ -253,6 +253,7 @@ impl Config {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn empty() -> Self {
         Self {
             colorize_logs: false,

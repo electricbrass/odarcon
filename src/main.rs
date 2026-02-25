@@ -369,12 +369,43 @@ fn edit_server(siv: &mut Cursive, title: &str, server_index: Option<usize>) {
     //         .with_user_data(|state: &mut AppState| state.config.servers[server_index].clone())
     //         .unwrap();
     // }
+    let (init_name, init_host, init_port, init_pass, init_proto) = if let Some(index) = server_index
+    {
+        let state = siv.user_data::<AppState>().unwrap();
+        let server = &state.config.servers[index];
+        (
+            server.name.clone(),
+            server.host.clone(),
+            server.port.to_string(),
+            server.password.clone(),
+            server.protoversion,
+        )
+    } else {
+        (
+            // TODO: impl Default for ServerConfig?
+            "".to_string(),
+            "".to_string(),
+            "".to_string(),
+            "".to_string(),
+            config::ProtocolVersion::Latest,
+        )
+    };
+
     let mut server_settings = ListView::new();
-    server_settings.add_child("Name:", EditView::new().with_name("server_name"));
-    server_settings.add_child("Hostname:", EditView::new().with_name("server_hostname"));
+    server_settings.add_child(
+        "Name:",
+        EditView::new().content(init_name).with_name("server_name"),
+    );
+    server_settings.add_child(
+        "Hostname:",
+        EditView::new()
+            .content(init_host)
+            .with_name("server_hostname"),
+    );
     server_settings.add_child(
         "Port (optional):",
         EditView::new()
+            .content(init_port)
             .on_edit(|s, content, _| filter_port("server_port", s, content))
             .with_name("server_port"),
     );
@@ -383,21 +414,27 @@ fn edit_server(siv: &mut Cursive, title: &str, server_index: Option<usize>) {
         EditView::new().secret().with_name("server_password"),
     );
     // TODO: get the labels from to_string or something on the versions
-    let protocol_versions = SelectView::new()
-        .popup()
-        .with_all(vec![
-            ("Latest (1.0.0)", config::ProtocolVersion::Latest),
-            (
-                "1.0.0",
-                config::ProtocolVersion::Custom {
-                    major: 1,
-                    minor: 0,
-                    revision: 0,
-                },
-            ),
-        ])
-        .with_name("protocol_version");
-    server_settings.add_child("Protocol Version:", protocol_versions);
+    let mut protocol_versions = SelectView::new().popup().with_all(vec![
+        ("Latest (1.0.0)", config::ProtocolVersion::Latest),
+        (
+            "1.0.0",
+            config::ProtocolVersion::Custom {
+                major: 1,
+                minor: 0,
+                revision: 0,
+            },
+        ),
+    ]);
+    let proto_index = protocol_versions
+        .iter()
+        .position(|(_, proto)| *proto == init_proto);
+    if let Some(proto_index) = proto_index {
+        protocol_versions.set_selection(proto_index);
+    }
+    server_settings.add_child(
+        "Protocol Version:",
+        protocol_versions.with_name("protocol_version"),
+    );
 
     let edit_dialog = Dialog::around(server_settings)
         .title(title)
@@ -406,7 +443,15 @@ fn edit_server(siv: &mut Cursive, title: &str, server_index: Option<usize>) {
             let name = s.call_on_name("server_name", |v: &mut EditView| v.get_content());
             let hostname = s.call_on_name("server_hostname", |v: &mut EditView| v.get_content());
             let port = s.call_on_name("server_port", |v: &mut EditView| v.get_content());
-            let password = s.call_on_name("server_password", |v: &mut EditView| v.get_content());
+            let password = s
+                .call_on_name("server_password", |v: &mut EditView| v.get_content())
+                // TODO: don't just unwrap here
+                .unwrap();
+            let password = if password.is_empty() {
+                init_pass.clone()
+            } else {
+                password.to_string()
+            };
             let protocol = s.call_on_name(
                 "protocol_version",
                 |v: &mut SelectView<config::ProtocolVersion>| {
@@ -423,7 +468,7 @@ fn edit_server(siv: &mut Cursive, title: &str, server_index: Option<usize>) {
                     name: name.unwrap().to_string(),
                     host: hostname.unwrap().to_string(),
                     port,
-                    password: password.unwrap().to_string(),
+                    password,
                     protoversion: protocol.unwrap(),
                 };
                 if let Some(Err(e)) = s.with_user_data(|state: &mut AppState| {
