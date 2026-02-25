@@ -97,3 +97,15 @@ impl RCONSocket {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn on_log(_s: String, _p: Option<PrintLevel>) {}
+
+    #[test]
+    fn connect_invalid_hostname() {
+        let s = RCONSocket::connect("example com", 11666, "", on_log);
+        assert!(s.is_err())
+    }
+}
