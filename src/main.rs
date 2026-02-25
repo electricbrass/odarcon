@@ -21,7 +21,6 @@ use cursive::view::*;
 use cursive::views::*;
 use cursive::views::{EditView, LinearLayout, TextView};
 use cursive::{Cursive, CursiveExt};
-// use url::Url;
 
 mod config;
 mod protocol;
