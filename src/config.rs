@@ -147,7 +147,7 @@ impl Default for ServerConfig {
         Self {
             name: "".to_string(),
             host: "".to_string(),
-            port: 10666,
+            port: 11666,
             password: "".to_string(),
             protoversion: ProtocolVersion::Latest,
         }
@@ -302,7 +302,7 @@ mod tests {
             [[servers]]
             name = "A cool server"
             host = "1.2.3.4"
-            port = 10666
+            port = 11666
             password = "verysecure"
             protoversion = "latest"
 
@@ -322,7 +322,7 @@ mod tests {
                 ServerConfig {
                     name: "A cool server".to_string(),
                     host: "1.2.3.4".to_string(),
-                    port: 10666,
+                    port: 11666,
                     password: "verysecure".to_string(),
                     protoversion: ProtocolVersion::Latest,
                 },

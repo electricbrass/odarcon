@@ -157,7 +157,7 @@ fn filter_port(name: &str, siv: &mut Cursive, content: &str) {
 
 fn verify_port(port: &str, siv: &mut Cursive) -> Option<u16> {
     if port.is_empty() {
-        return Some(10666);
+        return Some(11666);
     }
 
     match port.parse::<u16>() {
