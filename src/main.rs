@@ -325,9 +325,13 @@ fn server_list(siv: &mut Cursive) -> impl cursive::View {
     });
     let servers = Panel::new(servers.with_name("server_list").scrollable());
     LinearLayout::vertical()
-        .child(Button::new("New Server", |s| {
-            edit_server(s, "New Server", None);
-        }))
+        .child(
+            LinearLayout::horizontal()
+                .child(DummyView.fixed_width(1))
+                .child(Button::new("New Server", |s| {
+                    edit_server(s, "New Server", None);
+                })),
+        )
         .child(servers)
 }
 
