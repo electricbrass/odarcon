@@ -78,8 +78,6 @@ async fn main() {
         s.toggle_debug_console();
     });
 
-    main_menu(&mut siv);
-
     let config = Config::load().unwrap_or_else(|e| {
         // TODO: make the popup more informative
         error_popup("Config file could not be loaded", &mut siv);
@@ -88,6 +86,8 @@ async fn main() {
     });
 
     siv.set_user_data(AppState { config });
+
+    main_menu(&mut siv);
 
     if let Some(themefile) = Config::config_dir().map(|dir| dir.join("theme.toml"))
         && themefile.exists()
@@ -252,56 +252,82 @@ fn main_menu(siv: &mut Cursive) {
     );
 }
 
-fn server_list(siv: &mut Cursive) -> impl cursive::View {
-    let modes = SelectView::new()
-        .with_all(vec![("Connect", 1), ("Edit", 2), ("Delete", 3)])
-        .popup();
-    // TODO: REMOVE THIS AND REPLACE WITH REAL CONFIG
-    let ugh = |x: &str| ServerConfig {
-        name: x.to_string(),
-        host: "127.0.0.1".to_string(),
-        port: 10666,
-        password: "12345".to_string(),
-        protoversion: config::ProtocolVersion::Latest,
-    };
-    let fakeconfig = Config {
-        colorize_logs: false,
-        servers: vec![
-            ugh("Example Server 1"),
-            ugh("Example Server 2"),
-            ugh("Example Server 3"),
-            ugh("Example Server 4"),
-            ugh("Example Server 5"),
-            ugh("Example Server 6"),
-            ugh("Example Server 7"),
-            ugh("Example Server 8"),
-            ugh("Example Server 9"),
-            ugh("Example Server 10"),
-        ],
-        logcolors: std::collections::HashMap::new(),
-    };
-    let mut servers = SelectView::new();
-    // TODO: need to add delete, edit, and reorder buttons somehow
-    // TODO: need to make it not clone so that buttons work right
-    for server in &fakeconfig.servers {
-        servers.add_item(&server.name, server.clone());
-    }
-    servers.set_on_submit(|s, server| {
-        // s.add_layer(modes);
-        s.pop_layer();
-        rcon_layer(s, &server.host, server.port, &server.password)
+fn rebuild_server_list(siv: &mut Cursive) {
+    let server_names: Vec<String> = siv
+        .user_data::<AppState>()
+        .unwrap()
+        .config
+        .servers
+        .iter()
+        .map(|s| s.name.clone())
+        .collect();
+
+    siv.call_on_name("server_list", |list: &mut SelectView<usize>| {
+        list.clear();
+        for (i, name) in server_names.iter().enumerate() {
+            list.add_item(name, i);
+        }
     });
-    let servers = Panel::new(servers.scrollable());
-    LinearLayout::vertical()
-        .child(
-            LinearLayout::horizontal()
-                .child(TextView::new(" Mode: "))
-                .child(modes)
-                .child(TextView::new(" | "))
-                .child(Button::new("New", |s| {
-                    edit_server(s, "New Server", None);
+}
+
+fn server_list(siv: &mut Cursive) -> impl cursive::View {
+    let mut servers = SelectView::new();
+    siv.with_user_data(|state: &mut AppState| {
+        for (i, server) in state.config.servers.iter().enumerate() {
+            servers.add_item(&server.name, i);
+        }
+    });
+    servers.set_on_submit(|s, server_id| {
+        let server = s
+            // TODO: can we do this without cloning?
+            .with_user_data(|state: &mut AppState| state.config.servers[*server_id].clone())
+            .unwrap();
+        let server_id = *server_id;
+        let modes = Dialog::around(
+            LinearLayout::vertical()
+                .child(Button::new("Connect", move |s| {
+                    s.pop_layer();
+                    rcon_layer(s, &server.host, server.port, &server.password);
+                }))
+                .child(Button::new("Edit", move |s| {
+                    s.pop_layer(); // todo: maybe only pop this after choosing save in the edit dialog?
+                    edit_server(s, "Edit Server", Some(server_id));
+                }))
+                .child(Button::new("Delete", move |s| {
+                    let areyousure = Dialog::text("Are you sure you want to delete this server?")
+                        .title("Delete Server")
+                        .dismiss_button("No")
+                        .button("Yes", move |s| {
+                            // TODO: figure out difference between this and with_user_data
+                            let config = &mut s.user_data::<AppState>().unwrap().config;
+                            config.servers.remove(server_id);
+                            if let Err(e) = config.save() {
+                                // TODO: make the popup more informative
+                                error_popup("Config file could not be saved", s);
+                                log::error!("Config file could not be saved: {e}");
+                            }
+                            s.pop_layer();
+                            s.pop_layer();
+                            s.call_on_name("server_list", |list: &mut SelectView| {
+                                // todo dont just unwrap
+                                list.remove_item(server_id);
+                            });
+                            rebuild_server_list(s);
+                        })
+                        .padding_top(1);
+                    s.add_layer(areyousure);
                 })),
         )
+        .dismiss_button("Cancel")
+        .title(&server.name)
+        .padding_top(1);
+        s.add_layer(modes);
+    });
+    let servers = Panel::new(servers.with_name("server_list").scrollable());
+    LinearLayout::vertical()
+        .child(Button::new("New Server", |s| {
+            edit_server(s, "New Server", None);
+        }))
         .child(servers)
 }
 
@@ -338,6 +364,11 @@ fn settings(siv: &mut Cursive) {
 }
 
 fn edit_server(siv: &mut Cursive, title: &str, server_index: Option<usize>) {
+    // if let Some(server_index) = server_index {
+    //     let server = siv
+    //         .with_user_data(|state: &mut AppState| state.config.servers[server_index].clone())
+    //         .unwrap();
+    // }
     let mut server_settings = ListView::new();
     server_settings.add_child("Name:", EditView::new().with_name("server_name"));
     server_settings.add_child("Hostname:", EditView::new().with_name("server_hostname"));
@@ -396,6 +427,7 @@ fn edit_server(siv: &mut Cursive, title: &str, server_index: Option<usize>) {
                     protoversion: protocol.unwrap(),
                 };
                 if let Some(Err(e)) = s.with_user_data(|state: &mut AppState| {
+                    // TODO: make sure the main server list gets updated
                     match server_index {
                         Some(index) => state.config.servers[index] = server,
                         None => state.config.add_server(server),
@@ -408,6 +440,7 @@ fn edit_server(siv: &mut Cursive, title: &str, server_index: Option<usize>) {
                 } else {
                     s.pop_layer();
                 }
+                rebuild_server_list(s);
             }
         })
         .min_width(56);
