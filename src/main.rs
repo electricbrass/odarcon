@@ -12,19 +12,15 @@
  * GNU General Public License for more details.
  */
 
-use cursive::align::{HAlign, VAlign};
+use cursive::align::HAlign;
 use cursive::event::{Event, Key};
 use cursive::theme;
-use cursive::theme::{ColorStyle, ColorType, Effect, Effects, PaletteColor, PaletteStyle, Style};
+use cursive::theme::{ColorStyle, ColorType, Effect, Effects, PaletteColor, Style};
 use cursive::utils::markup::StyledString;
 use cursive::view::*;
 use cursive::views::*;
 use cursive::views::{EditView, LinearLayout, TextView};
 use cursive::{Cursive, CursiveExt};
-use futures_util::{SinkExt, StreamExt};
-use tokio_tungstenite::connect_async;
-use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 // use url::Url;
 
 mod config;
@@ -606,7 +602,8 @@ fn rcon_layer(siv: &mut Cursive, hostname: &str, port: u16, password: &str) {
     let cb_sink = siv.cb_sink().clone();
     // TODO: make a visual distinction between prints from the client and from the server
     // probably keep the > for the printing of commands, and for server logs nothing and for client logs some other character
-    let print_to_console = move |text: String, level: Option<PrintLevel>| {
+    // TODO: if colorize_logs, actually use colors here
+    let print_to_console = move |text: String, _level: Option<PrintLevel>| {
         cb_sink
             .send(Box::new(move |s: &mut Cursive| {
                 s.call_on_name("output", |v: &mut TextView| {
