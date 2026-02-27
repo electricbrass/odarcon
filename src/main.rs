@@ -541,6 +541,10 @@ fn rcon_layer(siv: &mut Cursive, hostname: &str, port: u16, password: &str) {
         .child(Button::new("Button 3", |_| {}))
         .child(DummyView.fixed_height(1))
         .child(Button::new("Disconnect", |s| {
+            s.with_user_data(|state: &mut AppState| {
+                // TODO: proper error handling
+                state.connection.as_ref().unwrap().disconnect();
+            });
             s.pop_layer();
             main_menu(s);
         }))

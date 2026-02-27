@@ -21,6 +21,7 @@ use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Error)]
 pub enum RCONError {
@@ -31,6 +32,7 @@ pub enum RCONError {
 pub struct RCONSocket {
     tx: UnboundedSender<String>,
     on_log: Arc<dyn Fn(String, Option<PrintLevel>) + Send + Sync>,
+    cancel_token: CancellationToken,
 }
 
 impl RCONSocket {
@@ -43,6 +45,8 @@ impl RCONSocket {
         let mut req = url_str.into_client_request()?;
         let on_log = Arc::new(on_log);
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+        let cancel_token = CancellationToken::new();
+        let token_clone = cancel_token.clone();
         tokio::spawn({
             let on_log = on_log.clone();
             async move {
@@ -88,13 +92,21 @@ impl RCONSocket {
                 }
             }
         });
-        Ok(Self { tx, on_log })
+        Ok(Self {
+            tx,
+            on_log,
+            cancel_token,
+        })
     }
 
     pub fn send(&self, message: ClientMessage) {
         if let Err(e) = self.tx.send(message.serialize()) {
             (self.on_log)(format!("Failed to send message: {}", e), None);
         }
+    }
+
+    pub fn disconnect(&self) {
+        self.cancel_token.cancel();
     }
 }
 
